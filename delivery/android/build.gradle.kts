@@ -1,39 +1,19 @@
-buildscript {
-
-    repositories {
-      // Make sure that you have the following two repositories
-      google()  // Google's Maven repository
-      mavenCentral()  // Maven Central repository
-    }
-
-    dependencies {
-      ...
-    
-      // Add the Maven coordinates and latest version of the plugin
-      classpath 'com.google.gms:google-services:4.4.3'
-    }
+plugins {
+    // Android Gradle Plugin จะถูกประกาศในโมดูล app
+    id("com.google.gms.google-services") version "4.4.3" apply false
 }
 
-allprojects {
-  ...
-
-  repositories {
-    // Make sure that you have the following two repositories
-    google()  // Google's Maven repository
-    mavenCentral()  // Maven Central repository
-  }
-}
-
-val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+// (ทางเลือก) ย้ายโฟลเดอร์ build ไปไว้ที่อื่น
+val newBuildDir = rootProject.layout.buildDirectory.dir("../../build").get()
+rootProject.layout.buildDirectory.set(newBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    val newSubprojectBuildDir = newBuildDir.dir(project.name)
+    layout.buildDirectory.set(newSubprojectBuildDir)
 }
-subprojects {
-    project.evaluationDependsOn(":app")
-}
+
+// ไม่จำเป็นต้องบังคับ evaluation ของ :app
+// subprojects { evaluationDependsOn(":app") }  <-- ลบได้
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
