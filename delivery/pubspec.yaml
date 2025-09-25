@@ -38,6 +38,15 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  firebase_core: ^3.x
+  firebase_auth: ^5.x
+  cloud_firestore: ^5.x
+  firebase_storage: ^13.x
+  firebase_database: ^11.x
+  google_maps_flutter: ^2.x
+  geolocator: ^13.x
+  geocoding: ^3.x
+  image_picker: ^1.x
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
