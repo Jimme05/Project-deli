@@ -1,19 +1,32 @@
 plugins {
     // Android Gradle Plugin จะถูกประกาศในโมดูล app
-    id("com.google.gms.google-services") version "4.4.3" apply false
+    id("com.google.gms.google-services") version "4.3.15" apply false
 }
 
-// (ทางเลือก) ย้ายโฟลเดอร์ build ไปไว้ที่อื่น
-val newBuildDir = rootProject.layout.buildDirectory.dir("../../build").get()
-rootProject.layout.buildDirectory.set(newBuildDir)
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
+rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir = newBuildDir.dir(project.name)
-    layout.buildDirectory.set(newSubprojectBuildDir)
-}
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
 
-// ไม่จำเป็นต้องบังคับ evaluation ของ :app
-// subprojects { evaluationDependsOn(":app") }  <-- ลบได้
+    // Ensure compileSdkVersion is set for Android subprojects
+    if (project.plugins.hasPlugin("com.android.library") || project.plugins.hasPlugin("com.android.application")) {
+        project.extensions.findByName("android")?.let { ext ->
+            (ext as? com.android.build.gradle.BaseExtension)?.compileSdkVersion(33)
+        }
+    }
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)

@@ -1,23 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'pages/login_page.dart';
+import 'pages/register_page.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-  );
-  runApp(const MyApp());
-}
+void main() => runApp(const DeliveryApp());
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class DeliveryApp extends StatelessWidget {
+  const DeliveryApp({super.key});
+
+  static const Color kGreen = Color(0xFF66A36C);
+  static const Color kBlue  = Color(0xFF2D7BF0);
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Delivery App',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const Scaffold(
-        body: Center(child: Text("Firebase Connected 🚀")),
+    final theme = ThemeData(
+      useMaterial3: true,
+      scaffoldBackgroundColor: kGreen,
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true, fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
       ),
+      appBarTheme: const AppBarTheme(backgroundColor: kGreen, foregroundColor: Colors.white, elevation: 0),
+    );
+
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: theme,
+      routes: {
+        '/': (_) => const LoginPage(),
+        '/register': (_) => const RegisterPage(),
+      },
+      initialRoute: '/',
     );
   }
 }
