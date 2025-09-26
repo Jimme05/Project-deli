@@ -28,11 +28,44 @@ class RiderProfilePage extends StatelessWidget {
         ),
         centerTitle: false,
       ),
+
+      // ✅ ย้ายปุ่มออกจากระบบมาตรงนี้ ให้โชว์ตลอด
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              elevation: 0,
+            ),
+            onPressed: () {
+              // TODO: ลบ session/token ถ้ามี
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('ออกจากระบบเรียบร้อย')),
+              );
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/', (route) => false);
+            },
+            icon: const Icon(Icons.logout),
+            label: const Text(
+              'ออกจากระบบ',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ),
+
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            // โปรไฟล์ไรเดอร์
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -46,10 +79,10 @@ class RiderProfilePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(
+                const Expanded(
                   child: Text(
                     'ชื่อไรเดอร์\nเบอร์ : 0123456789\nทะเบียนรถ : กด 234',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       color: Colors.black87,
                       height: 1.35,
@@ -58,9 +91,7 @@ class RiderProfilePage extends StatelessWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 18),
-
             const Text(
               'รายการ',
               style: TextStyle(
@@ -71,7 +102,6 @@ class RiderProfilePage extends StatelessWidget {
             ),
             const SizedBox(height: 10),
 
-            // การ์ดออเดอร์
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -80,7 +110,7 @@ class RiderProfilePage extends StatelessWidget {
                   BoxShadow(
                     color: Colors.black.withOpacity(0.15),
                     blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    offset: Offset(0, 4),
                   ),
                 ],
               ),
@@ -88,36 +118,22 @@ class RiderProfilePage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // แถวผู้ส่ง
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const CircleAvatar(
+                    children: const [
+                      CircleAvatar(
                         radius: 22,
                         backgroundColor: Color(0xFFEDE7F6),
                         child: Icon(Icons.person, color: Colors.black87),
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: 10),
                       Expanded(
-                        child: RichText(
-                          text: const TextSpan(
-                            style: TextStyle(
-                              color: Colors.black87,
-                              fontSize: 15,
-                              height: 1.4,
-                            ),
-                            children: [
-                              TextSpan(
-                                text: 'ผู้ส่ง : ',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              TextSpan(text: 'ทิวย์\n'),
-                              TextSpan(
-                                text: 'เบอร์ : ',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              TextSpan(text: '0999999999'),
-                            ],
+                        child: Text(
+                          'ผู้ส่ง : ทิวย์\nเบอร์ : 0999999999',
+                          style: TextStyle(
+                            color: Colors.black87,
+                            fontSize: 15,
+                            height: 1.4,
                           ),
                         ),
                       ),
@@ -125,27 +141,21 @@ class RiderProfilePage extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   const Divider(height: 1, color: Colors.black54),
-
                   const SizedBox(height: 10),
-
-                  // ผู้รับ + ที่อยู่
                   const Text(
                     'ผู้รับ : เฟิร์ส',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'ที่อยู่ : ที่อยู่ : มหาสารคาม ตำบลขามเฒ่า กันทรวิชัย 45170',
+                    'ที่อยู่ : มหาสารคาม ตำบลขามเฒ่า กันทรวิชัย 45170',
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.black87,
                       height: 1.35,
                     ),
                   ),
-
                   const SizedBox(height: 16),
-
-                  // ปุ่มรับออเดอร์
                   SizedBox(
                     width: double.infinity,
                     height: 44,
@@ -158,9 +168,7 @@ class RiderProfilePage extends StatelessWidget {
                         ),
                         elevation: 0,
                       ),
-                      onPressed: () {
-                        // TODO: ใส่ลอจิกรับออเดอร์ที่นี่
-                      },
+                      onPressed: () {},
                       child: const Text(
                         'รับออเดอร์',
                         style: TextStyle(fontSize: 16),
@@ -170,6 +178,9 @@ class RiderProfilePage extends StatelessWidget {
                 ],
               ),
             ),
+
+            // กันเนื้อหาโดนทับด้วยปุ่มล่าง
+            const SizedBox(height: 80),
           ],
         ),
       ),
