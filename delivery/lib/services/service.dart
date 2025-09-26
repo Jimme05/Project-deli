@@ -119,43 +119,57 @@ Future<AuthResult> signUpUser(UserSignUpRequest req) async {
 
   // ---------- LOGIN ----------
   Future<AuthResult> login(LoginRequest req) async {
-    try {
-      final qs = await _db
-          .collection('users')
-          .where('phone', isEqualTo: req.phone)
-          .where('passwordHash', isEqualTo: _hash(req.password))
-          .limit(1)
-          .get();
-      if (qs.docs.isEmpty) {
-        return AuthResult(success: false, message: 'เบอร์หรือรหัสผ่านไม่ถูกต้อง');
-      }
-      final doc = qs.docs.first;
-      final user = UserResponse.fromFirestore(doc.id, doc.data());
+  try {
+    final phone = req.phone.trim();
+    final hash  = _hash(req.password);
+
+    // 1) users (source of truth)
+    final qUser = await _db
+        .collection('users')
+        .where('phone', isEqualTo: phone)
+        .where('passwordHash', isEqualTo: hash)
+        .limit(1)
+        .get();
+
+    if (qUser.docs.isNotEmpty) {
+      final d = qUser.docs.first;
+      final user = UserResponse.fromFirestore(d.id, d.data());
       await _persistUser(user);
       return AuthResult(success: true, user: user);
-    } catch (e) {
-      return AuthResult(success: false, message: e.toString());
     }
-  }
-  Future<AuthResult> loginRider(LoginRequest req) async {
-    try {
-      final qs = await _db
-          .collection('riders')
-          .where('phone', isEqualTo: req.phone)
-          .where('passwordHash', isEqualTo: _hash(req.password))
-          .limit(1)
-          .get();
-      if (qs.docs.isEmpty) {
-        return AuthResult(success: false, message: 'เบอร์หรือรหัสผ่านไม่ถูกต้อง');
-      }
-      final doc = qs.docs.first;
-      final riders = UserResponse.fromFirestore(doc.id, doc.data());
-      await _persistUser(riders);
-      return AuthResult(success: true, user: riders);
-    } catch (e) {
-      return AuthResult(success: false, message: e.toString());
+
+    // 2) riders (fallback) – มี passwordHash ด้วยในสคีมาของคุณ
+    final qRider = await _db
+        .collection('riders')
+        .where('phone', isEqualTo: phone)
+        .where('passwordHash', isEqualTo: hash)
+        .limit(1)
+        .get();
+
+    if (qRider.docs.isNotEmpty) {
+      final r = qRider.docs.first;
+      final data = r.data();
+      // สร้าง UserResponse จากโครง riders ของคุณ
+      final user = UserResponse(
+        uid: r.id,
+        phone: data['phone'] ?? '',
+        name:  data['Name'] ?? '',             // ← ใน riders ใช้ 'Name'
+        role:  'rider',
+        photoUrl: data['img_profile'],         // ← รูปโปรไฟล์ใน riders
+      );
+
+      await _persistUser(user);
+      return AuthResult(success: true, user: user);
     }
+
+    // ทั้ง users และ riders ไม่พบ
+    return AuthResult(success: false, message: 'เบอร์หรือรหัสผ่านไม่ถูกต้อง');
+  } catch (e) {
+    return AuthResult(success: false, message: e.toString());
   }
+}
+
+
 
   // ---------- Session ----------
   Future<void> logout() => _storage.deleteAll();
