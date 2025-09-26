@@ -95,6 +95,7 @@ Future<AuthResult> signUpUser(UserSignUpRequest req) async {
         'passwordHash': _hash(req.password),
         'img_profile': req.profileUrl,
         'phone': req.phone,
+        'role': 'rider',
         'Vehicle_img': req.vehicleImgUrl,
         'vehicle_plate': req.vehiclePlate,
         'Status-rider': 'idle',
@@ -139,7 +140,7 @@ Future<AuthResult> signUpUser(UserSignUpRequest req) async {
   Future<AuthResult> loginRider(LoginRequest req) async {
     try {
       final qs = await _db
-          .collection('Riders')
+          .collection('riders')
           .where('phone', isEqualTo: req.phone)
           .where('passwordHash', isEqualTo: _hash(req.password))
           .limit(1)
@@ -148,9 +149,9 @@ Future<AuthResult> signUpUser(UserSignUpRequest req) async {
         return AuthResult(success: false, message: 'เบอร์หรือรหัสผ่านไม่ถูกต้อง');
       }
       final doc = qs.docs.first;
-      final user = UserResponse.fromFirestore(doc.id, doc.data());
-      await _persistUser(user);
-      return AuthResult(success: true, user: user);
+      final riders = UserResponse.fromFirestore(doc.id, doc.data());
+      await _persistUser(riders);
+      return AuthResult(success: true, user: riders);
     } catch (e) {
       return AuthResult(success: false, message: e.toString());
     }
