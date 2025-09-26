@@ -48,6 +48,8 @@ dev_dependencies:
   geolocator:
   geocoding:
   image_picker:
+  assets:
+    - asset/logo.png
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
