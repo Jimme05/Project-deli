@@ -43,7 +43,7 @@ class DeliveryHomePage extends StatelessWidget {
               color: green,
               alignment: Alignment.center,
               child: Image.asset(
-                'assets/logo_delivery.png', // ใส่โลโก้ของคุณ
+                'delivery/lib/pages/logo.png', // ใส่โลโก้ของคุณ
                 height: 42,
                 fit: BoxFit.contain,
               ),

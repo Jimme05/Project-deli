@@ -15,7 +15,7 @@ void main() async {
 class DeliveryApp extends StatelessWidget {
   const DeliveryApp({super.key});
   static const green = Color(0xFF6AA56F);
-  static const blue  = Color(0xFF2D7BF0);
+  static const blue = Color(0xFF2D7BF0);
 
   @override
   Widget build(BuildContext context) {
@@ -23,22 +23,31 @@ class DeliveryApp extends StatelessWidget {
       useMaterial3: false,
       scaffoldBackgroundColor: green,
       appBarTheme: const AppBarTheme(
-        backgroundColor: green, foregroundColor: Colors.white, elevation: 0),
+        backgroundColor: green,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
       inputDecorationTheme: InputDecorationTheme(
-        filled: true, fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         hintStyle: const TextStyle(color: Colors.black45),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: theme,
       routes: {
-        '/': (_) => const LoginPage(),
+        '/': (_) => const DeliveryHomePage(),
         '/register': (_) => const RegisterPage(),
-        '/rider': (_) => const RiderProfilePage(),
+        '/rider': (_) => const LoginPage(),
         '/home': (_) => const DeliveryHomePage(),
       },
     );
