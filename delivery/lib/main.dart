@@ -45,9 +45,9 @@ class DeliveryApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: theme,
       routes: {
-        '/': (_) => const DeliveryHomePage(),
+        '/': (_) => const LoginPage(),
         '/register': (_) => const RegisterPage(),
-        '/rider': (_) => const LoginPage(),
+        '/rider': (_) => const RiderProfilePage(),
         '/home': (_) => const DeliveryHomePage(),
       },
     );
