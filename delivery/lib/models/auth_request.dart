@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:delivery/models/address.dart';
 
 class LoginRequest {
@@ -12,6 +14,7 @@ class UserSignUpRequest {
   final String name;
   final String? photoUrl;
   final Address primaryAddress;
+  final File? profileFile;
 
   UserSignUpRequest({
     required this.phone,
@@ -19,6 +22,7 @@ class UserSignUpRequest {
     required this.name,
     required this.primaryAddress,
     this.photoUrl,
+    this.profileFile,
   });
 }
 
