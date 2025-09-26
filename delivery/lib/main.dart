@@ -1,3 +1,5 @@
+import 'package:delivery/pages/home_page.dart';
+import 'package:delivery/pages/rider_profile_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'pages/login_page.dart';
@@ -36,6 +38,8 @@ class DeliveryApp extends StatelessWidget {
       routes: {
         '/': (_) => const LoginPage(),
         '/register': (_) => const RegisterPage(),
+        '/rider': (_) => const RiderProfilePage(),
+        '/home': (_) => const DeliveryHomePage(),
       },
     );
   }
