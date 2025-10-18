@@ -4,9 +4,10 @@ import 'package:delivery/pages/profile_page.dart';
 import 'package:delivery/pages/rider_profile_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'pages/login_page.dart';
 import 'pages/register_page.dart';
-import 'firebase_options.dart'; // สร้างจาก flutterfire configure
+import 'firebase_options.dart';
 import 'pages/delivery_page.dart';
 
 void main() async {
@@ -33,10 +34,8 @@ class DeliveryApp extends StatelessWidget {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         hintStyle: const TextStyle(color: Colors.black45),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
@@ -44,17 +43,46 @@ class DeliveryApp extends StatelessWidget {
         ),
       ),
     );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: theme,
+      home: const AuthGate(), // ✅ จุดเริ่มใหม่
       routes: {
-        '/': (_) => const LoginPage(),
         '/register': (_) => const RegisterPage(),
         '/rider': (_) => const RiderProfilePage(),
         '/home': (_) => const DeliveryHomePage(),
         '/delivery': (_) => const DeliveryPage(),
         '/profile': (_) => const ProfilePage(),
         '/add_address': (_) => const AddAddressPage(),
+      },
+    );
+  }
+}
+
+/// ✅ ตรวจสถานะล็อกอินก่อนเข้าแอป
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snap.data;
+        if (user == null) {
+          // ยังไม่ได้ล็อกอิน
+          return const LoginPage();
+        } else {
+          // ล็อกอินแล้ว
+          return const DeliveryHomePage();
+        }
       },
     );
   }
