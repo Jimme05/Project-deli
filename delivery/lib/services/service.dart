@@ -61,14 +61,13 @@ class SimpleAuthService {
       String? photoName;
 
       if (req.profileFile != null) {
-        final upload = await HttpUploadService().uploadFile(
+        // ❗ ถ้าอัปโหลดพลาด ให้ throw เลย เพื่อไม่ให้เขียน Firestore เป็น null
+        final up = await HttpUploadService().uploadFile(
           req.profileFile!,
           customName: "user_${userDoc.id}_profile.jpg",
         );
-        if (upload != null) {
-          photoUrl = upload.url;
-          photoName = upload.filename;
-        }
+        photoUrl = up.url;
+        photoName = up.filename;
       }
 
       final userData = {
@@ -76,8 +75,8 @@ class SimpleAuthService {
         'passwordHash': _hash(req.password),
         'name': req.name,
         'role': 'user',
-        'photoUrl': photoUrl,
-        'photoName': photoName, // ✅ เก็บชื่อไฟล์ไว้ด้วย
+        'photoUrl': photoUrl, // ถ้าไม่เลือกภาพ จะเป็น null โดยตั้งใจ
+        'photoName': photoName,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };

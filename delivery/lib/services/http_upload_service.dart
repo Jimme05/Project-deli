@@ -1,3 +1,4 @@
+// lib/services/http_upload_service.dart
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -11,30 +12,27 @@ class UploadResult {
 class HttpUploadService {
   static const String _baseUrl = "http://202.28.34.203:30000/upload";
 
-  Future<UploadResult?> uploadFile(File file, {String? customName}) async {
-    try {
-      final uri = Uri.parse(_baseUrl);
-      final request = http.MultipartRequest('POST', uri);
+  Future<UploadResult> uploadFile(File file, {String? customName}) async {
+    final uri = Uri.parse(_baseUrl);
+    final filename = customName ??
+        "${DateTime.now().millisecondsSinceEpoch}_${file.path.split(Platform.pathSeparator).last}";
 
-      // ตั้งชื่อไฟล์เองถ้าอยากให้ชื่อไม่ซ้ำ
-      final filename = customName ??
-          "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
-      request.files.add(await http.MultipartFile.fromPath('file', file.path, filename: filename));
+    final req = http.MultipartRequest('POST', uri)
+      ..files.add(await http.MultipartFile.fromPath('file', file.path, filename: filename));
 
-      final response = await request.send();
-      final resBody = await response.stream.bytesToString();
-      final data = json.decode(resBody);
+    final streamed = await req.send().timeout(const Duration(seconds: 30));
+    final body = await streamed.stream.bytesToString();
 
-      if (response.statusCode == 200) {
-        final url = data['url'] ?? data['path'] ?? '';
-        return UploadResult(url: url, filename: filename);
-      } else {
-        print('Upload failed: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      print('Upload error: $e');
-      return null;
+    if (streamed.statusCode != 200) {
+      throw Exception("Upload failed ${streamed.statusCode}: $body");
     }
+
+    // ปรับให้รองรับหลายรูปแบบ JSON ของ backend
+    final data = json.decode(body);
+    final url = (data['url'] ?? data['path'] ?? data['data']?['url'])?.toString();
+    if (url == null || url.isEmpty) {
+      throw Exception("Upload ok but no URL in response: $body");
+    }
+    return UploadResult(url: url, filename: filename);
   }
 }
