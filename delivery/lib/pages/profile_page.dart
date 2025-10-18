@@ -85,9 +85,9 @@ class _ProfilePageState extends State<ProfilePage> {
     await _auth.signOut();
     if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('ออกจากระบบเรียบร้อย')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('ออกจากระบบเรียบร้อย')));
   }
 
   @override
@@ -112,11 +112,14 @@ class _ProfilePageState extends State<ProfilePage> {
                         backgroundColor: Colors.white54,
                         backgroundImage:
                             (photoUrl != null && photoUrl!.isNotEmpty)
-                                ? NetworkImage(photoUrl!)
-                                : null,
+                            ? NetworkImage(photoUrl!)
+                            : null,
                         child: (photoUrl == null || photoUrl!.isEmpty)
-                            ? const Icon(Icons.person,
-                                size: 60, color: Colors.grey)
+                            ? const Icon(
+                                Icons.person,
+                                size: 60,
+                                color: Colors.grey,
+                              )
                             : null,
                       ),
                       const SizedBox(height: 8),
@@ -157,15 +160,20 @@ class _ProfilePageState extends State<ProfilePage> {
                       ],
                     ),
                     child: ListTile(
-                      leading: const Icon(Icons.location_on,
-                          color: Colors.red, size: 28),
+                      leading: const Icon(
+                        Icons.location_on,
+                        color: Colors.red,
+                        size: 28,
+                      ),
                       title: const Text(
                         'แก้ไขที่อยู่ของฉัน',
                         style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w500),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       onTap: () {
-                        Navigator.pushNamed(context, '/add_address');
+                        Navigator.pushNamed(context, '/edit_address');
                       },
                     ),
                   ),
@@ -192,7 +200,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       child: const Text(
                         'ออกจากระบบ',
                         style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),

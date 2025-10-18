@@ -1,4 +1,5 @@
 import 'package:delivery/pages/add_address_page.dart';
+import 'package:delivery/pages/edit_address_page.dart';
 import 'package:delivery/pages/home_page.dart';
 import 'package:delivery/pages/profile_page.dart';
 import 'package:delivery/pages/rider_parcel_status_page.dart';
@@ -57,6 +58,7 @@ class DeliveryApp extends StatelessWidget {
         '/profile': (_) => const ProfilePage(),
         '/add_address': (_) => const AddAddressPage(),
         '/rider_parcel_status': (_) => const RiderParcelStatusPage(),
+        '/edit_address': (_) => const EditAddressPage(),
       },
     );
   }
