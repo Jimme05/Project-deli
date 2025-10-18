@@ -31,15 +31,19 @@ class RiderSignUpRequest {
   final String password;
   final String name;
   final String vehiclePlate;
-  final String? profileUrl;
-  final String? vehicleImgUrl;
+  final File? profileFile;   // ✅ ส่งไฟล์ให้ service
+  final File? vehicleFile;   // ✅ ส่งไฟล์ให้ service
+  final String? profileUrl;  // (optional) ถ้ามีอยู่แล้ว
+  final String? vehicleUrl;  // (optional)
 
   RiderSignUpRequest({
     required this.phone,
     required this.password,
     required this.name,
     required this.vehiclePlate,
+    this.profileFile,
+    this.vehicleFile,
     this.profileUrl,
-    this.vehicleImgUrl,
+    this.vehicleUrl,
   });
 }

@@ -1,7 +1,6 @@
-// lib/services/http_upload_service.dart
 import 'dart:io';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class UploadResult {
   final String url;
@@ -10,29 +9,29 @@ class UploadResult {
 }
 
 class HttpUploadService {
-  static const String _baseUrl = "http://202.28.34.203:30000/upload";
+  // ← ชี้ไปเซิร์ฟเวอร์ของคุณ
+  static const String _endpoint = "http://202.28.34.203:30000/upload";
 
   Future<UploadResult> uploadFile(File file, {String? customName}) async {
-    final uri = Uri.parse(_baseUrl);
-    final filename = customName ??
+    final uri = Uri.parse(_endpoint);
+    final name = customName ??
         "${DateTime.now().millisecondsSinceEpoch}_${file.path.split(Platform.pathSeparator).last}";
 
     final req = http.MultipartRequest('POST', uri)
-      ..files.add(await http.MultipartFile.fromPath('file', file.path, filename: filename));
+      ..files.add(await http.MultipartFile.fromPath('file', file.path, filename: name));
 
-    final streamed = await req.send().timeout(const Duration(seconds: 30));
-    final body = await streamed.stream.bytesToString();
+    final res = await req.send();
+    final body = await res.stream.bytesToString();
 
-    if (streamed.statusCode != 200) {
-      throw Exception("Upload failed ${streamed.statusCode}: $body");
+    if (res.statusCode != 200) {
+      throw Exception("Upload failed: ${res.statusCode} $body");
     }
-
-    // ปรับให้รองรับหลายรูปแบบ JSON ของ backend
-    final data = json.decode(body);
-    final url = (data['url'] ?? data['path'] ?? data['data']?['url'])?.toString();
+    final jsonBody = json.decode(body);
+    // รองรับทั้ง {url: "..."} หรือ {path: "..."}
+    final url = (jsonBody['url'] ?? jsonBody['path'])?.toString();
     if (url == null || url.isEmpty) {
-      throw Exception("Upload ok but no URL in response: $body");
+      throw Exception("Upload ok but no url/path in response: $body");
     }
-    return UploadResult(url: url, filename: filename);
+    return UploadResult(url: url, filename: name);
   }
 }

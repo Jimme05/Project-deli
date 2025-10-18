@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../main.dart';
 import '../models/auth_request.dart';
-import '../services/storage_service.dart';
-import '../services/service.dart';
+import '../services/firebase_auth_service.dart'; // 👈 ใช้ FirebaseAuth + อัปโหลดใน service
 
 class RegisterRiderTab extends StatefulWidget {
   const RegisterRiderTab({super.key});
@@ -14,6 +14,8 @@ class RegisterRiderTab extends StatefulWidget {
 
 class _RegisterRiderTabState extends State<RegisterRiderTab> {
   final _form = GlobalKey<FormState>();
+
+  final _email = TextEditingController();   // 👈 ใหม่: สมัครด้วย Email/Password
   final _phone = TextEditingController();
   final _pass  = TextEditingController();
   final _name  = TextEditingController();
@@ -22,6 +24,16 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
   final _picker = ImagePicker();
   File? _profile, _vehicle;
   bool _loading = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _phone.dispose();
+    _pass.dispose();
+    _name.dispose();
+    _plate.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickProfile() async {
     final x = await _picker.pickImage(source: ImageSource.gallery);
@@ -37,36 +49,42 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
     if (!_form.currentState!.validate()) return;
     setState(() => _loading = true);
 
-    String? pUrl, vUrl;
-    if (_profile != null) {
-      pUrl = await StorageService()
-          .uploadFile(_profile!, "riders/${DateTime.now().millisecondsSinceEpoch}_profile.jpg");
-    }
-    if (_vehicle != null) {
-      vUrl = await StorageService()
-          .uploadFile(_vehicle!, "riders/${DateTime.now().millisecondsSinceEpoch}_vehicle.jpg");
-    }
+    try {
+      // ✅ ไม่อัปโหลดรูปใน UI — ส่งไฟล์ให้ service จัดการ
+      final req = RiderSignUpRequest(
+        phone: _phone.text.trim(),
+        password: _pass.text,
+        name: _name.text.trim(),
+        vehiclePlate: _plate.text.trim(),
+        profileFile: _profile,
+        vehicleFile: _vehicle,
+      );
 
-    final req = RiderSignUpRequest(
-      phone: _phone.text.trim(),
-      password: _pass.text,
-      name: _name.text.trim(),
-      vehiclePlate: _plate.text.trim(),
-      profileUrl: pUrl,
-      vehicleImgUrl: vUrl,
-    );
+      final auth = FirebaseAuthService();
+      final res = await auth.signUpRiderWithEmail(
+        email: _email.text.trim(),
+        req: req,
+      );
 
-    final res = await SimpleAuthService().signUpRider(req);
-    setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() => _loading = false);
 
-    if (!mounted) return;
-    if (res.success) {
+      if (res.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('สมัคร Rider สำเร็จ: ${res.user!.uid}')),
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(res.message ?? 'สมัครไม่สำเร็จ')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('สมัคร Rider สำเร็จ: ${res.user!.uid}')));
-      Navigator.pop(context);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(res.message ?? 'สมัครไม่สำเร็จ')));
+        SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+      );
     }
   }
 
@@ -83,39 +101,59 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
             _ImageBox(label: "รูปยานพาหนะ", file: _vehicle, onTap: _pickVehicle),
           ]),
           const SizedBox(height: 12),
+
+          // Email (สำหรับ FirebaseAuth)
+          TextFormField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              hintText: "Email", prefixIcon: Icon(Icons.email_rounded)),
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'กรอกอีเมล';
+              final ok = RegExp(r"^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$").hasMatch(v.trim());
+              return ok ? null : 'รูปแบบอีเมลไม่ถูกต้อง';
+            },
+          ),
+          const SizedBox(height: 10),
+
           TextFormField(
             controller: _phone, keyboardType: TextInputType.phone,
             decoration: const InputDecoration(hintText: "Phone", prefixIcon: Icon(Icons.phone_rounded)),
             validator: (v)=> v==null||v.isEmpty ? 'กรอกเบอร์โทร' : null,
           ),
           const SizedBox(height: 10),
+
           TextFormField(
             controller: _pass, obscureText: true,
             decoration: const InputDecoration(hintText: "Password", prefixIcon: Icon(Icons.lock_rounded)),
             validator: (v)=> v==null||v.length<6 ? 'อย่างน้อย 6 ตัว' : null,
           ),
           const SizedBox(height: 10),
+
           TextFormField(
             controller: _name,
             decoration: const InputDecoration(hintText: "Name", prefixIcon: Icon(Icons.person_rounded)),
             validator: (v)=> v==null||v.isEmpty ? 'กรอกชื่อ' : null,
           ),
           const SizedBox(height: 10),
+
           TextFormField(
             controller: _plate,
             decoration: const InputDecoration(hintText: "license plate", prefixIcon: Icon(Icons.confirmation_num_rounded)),
             validator: (v)=> v==null||v.isEmpty ? 'กรอกทะเบียนรถ' : null,
           ),
           const SizedBox(height: 16),
+
           SizedBox(
             width: double.infinity, height: 48,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: DeliveryApp.blue, foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)) ),
               onPressed: _loading ? null : _submit,
-              child: _loading ? const CircularProgressIndicator(color: Colors.white)
-                              : const Text("Sign Up", style: TextStyle(fontWeight: FontWeight.w600)),
+              child: _loading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text("Sign Up", style: TextStyle(fontWeight: FontWeight.w600)),
             ),
           ),
         ]),

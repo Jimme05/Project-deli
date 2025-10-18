@@ -98,40 +98,7 @@ class SimpleAuthService {
   }
 
   // ---------- RIDER ----------
-  Future<AuthResult> signUpRider(RiderSignUpRequest req) async {
-    try {
-      if (await _phoneExists(req.phone)) {
-        return AuthResult(success: false, message: 'เบอร์นี้ถูกใช้ไปแล้ว');
-      }
-
-      final riderDoc = _db.collection('riders').doc();
-      final riderData = {
-        'Rider_id': riderDoc.id,
-        'Name': req.name,
-        'passwordHash': _hash(req.password),
-        'img_profile': req.profileUrl,
-        'phone': req.phone,
-        'role': 'rider',
-        'Vehicle_img': req.vehicleImgUrl,
-        'vehicle_plate': req.vehiclePlate,
-        'Status-rider': 'idle',
-        'latitude': null,
-        'longitude': null,
-        'created_at': FieldValue.serverTimestamp(),
-        'updated_at': FieldValue.serverTimestamp(),
-      };
-
-      final batch = _db.batch();
-      batch.set(riderDoc, riderData);
-      await batch.commit();
-
-      final user = UserResponse.fromFirestore(riderDoc.id, riderData);
-      await _persistUser(user);
-      return AuthResult(success: true, user: user);
-    } catch (e) {
-      return AuthResult(success: false, message: e.toString());
-    }
-  }
+  
 
   // ---------- LOGIN ----------
   Future<AuthResult> login(LoginRequest req) async {
