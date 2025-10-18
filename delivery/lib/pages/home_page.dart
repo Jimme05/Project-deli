@@ -6,33 +6,38 @@ class DeliveryHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final green = const Color(0xFF5BA16C); // สีหัวบน/ล่างใกล้ภาพ
-    final pageBg = const Color(0xFFE5E3E3); // เทาพื้นหลัง
+    final green = const Color(0xFF5BA16C);
+    final pageBg = const Color(0xFFE5E3E3);
 
     return Scaffold(
       backgroundColor: pageBg,
-      // ปุ่ม + ชมพู มุมขวาล่าง
-      floatingActionButton: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFE9C6F2), // ชมพูอ่อนแบบการ์ด
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        width: 64,
-        height: 64,
-        child: IconButton(
-          icon: const Icon(Icons.add, size: 32, color: Colors.black87),
-          onPressed: () {},
+
+      // ✅ ปุ่ม + (ไปหน้าเพิ่มที่อยู่)
+      floatingActionButton: GestureDetector(
+        onTap: () {
+          Navigator.pushNamed(context, '/add_address'); // ไปหน้าที่สร้างไว้
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9C6F2),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          width: 64,
+          height: 64,
+          child: const Icon(Icons.add, size: 32, color: Colors.black87),
         ),
       ),
-      // แถบล่าง แยกไฟล์แล้ว
+
+      // ✅ แถบล่าง
       bottomNavigationBar: const BottomNav(currentIndex: 0),
+
       body: SafeArea(
         child: Column(
           children: [
@@ -43,7 +48,7 @@ class DeliveryHomePage extends StatelessWidget {
               color: green,
               alignment: Alignment.center,
               child: Image.asset(
-                'assets/images/logo.png', // ใส่โลโก้ของคุณ
+                'assets/images/logo.png',
                 height: 100,
                 fit: BoxFit.contain,
               ),
@@ -107,13 +112,11 @@ class DeliveryHomePage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // แถวไอคอนกล่อง + หัวข้อ
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // ไอคอนกล่อง
                               Image.asset(
-                                'assets/images/box.png', // ใส่ภาพกล่องของคุณ
+                                'assets/images/box.png',
                                 width: 46,
                                 height: 46,
                                 fit: BoxFit.contain,
@@ -129,8 +132,6 @@ class DeliveryHomePage extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 10),
-
-                          // 3 คอลัมน์: ชื่อผู้รับ | วันที่จัดส่ง | สถานะ
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -148,10 +149,7 @@ class DeliveryHomePage extends StatelessWidget {
                               ),
                             ],
                           ),
-
                           const SizedBox(height: 10),
-
-                          // ที่อยู่
                           const Text(
                             'ที่อยู่ : มหาสารคาม ตำบลขามเฒ่า กันทรวิชัย 45170',
                             style: TextStyle(fontSize: 14),
@@ -169,7 +167,6 @@ class DeliveryHomePage extends StatelessWidget {
     );
   }
 
-  // helper แสดง label: value ในบรรทัดเดียว
   Widget _labelValue(String label, String value) {
     return RichText(
       text: TextSpan(
