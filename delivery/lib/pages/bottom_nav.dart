@@ -9,8 +9,21 @@ class BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return BottomNavigationBar(
       currentIndex: currentIndex,
-      onTap: onTap,
-      backgroundColor: const Color(0xFF5BA16C), // เขียวท้องฟ้าตามภาพล่าง
+      onTap: (index) {
+        switch (index) {
+          case 0: // หน้า Home
+            Navigator.pushNamed(context, '/home');
+            break;
+          case 1: // ✅ ปุ่มกลาง -> ไปหน้า delivery_page
+            Navigator.pushNamed(context, '/delivery');
+            break;
+          case 2: // หน้าโปรไฟล์ไรเดอร์
+            Navigator.pushNamed(context, '/profile');
+            break;
+        }
+        if (onTap != null) onTap!(index);
+      },
+      backgroundColor: const Color(0xFF5BA16C),
       selectedItemColor: Colors.black,
       unselectedItemColor: Colors.black54,
       showSelectedLabels: false,
