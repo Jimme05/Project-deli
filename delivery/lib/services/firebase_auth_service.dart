@@ -151,34 +151,32 @@ class FirebaseAuthService {
 
 
 
-  Future<AuthResult> loginWithEmail({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      final cred = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-      final u = cred.user!;
-      final snap = await _db.collection('users').doc(u.uid).get();
-      if (!snap.exists) {
-        // เผื่อกรณีไม่มี doc users — สร้างขั้นต่ำ
-        await _db.collection('users').doc(u.uid).set({
-          'name': u.displayName ?? '',
-          'phone': u.phoneNumber ?? '',
-          'role': 'user',
-          'photoUrl': u.photoURL,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-      final profile = await currentUser();
-      return AuthResult(success: true, user: profile);
-    } catch (e) {
-      return AuthResult(success: false, message: e.toString());
+  Future<AuthResult> loginWithEmail({required String email, required String password}) async {
+  try {
+    final cred = await _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
+    final u = cred.user!;
+    final snap = await _db.collection('users').doc(u.uid).get();
+    if (!snap.exists) {
+      await _db.collection('users').doc(u.uid).set({'role': 'user'}, SetOptions(merge: true));
     }
+    final profile = await currentUser();
+    return AuthResult(success: true, user: profile);
+  } on fa.FirebaseAuthException catch (e) {
+    String msg;
+    switch (e.code) {
+      case 'user-not-found':   msg = 'ไม่พบบัญชีอีเมลนี้'; break;
+      case 'wrong-password':   msg = 'รหัสผ่านไม่ถูกต้อง'; break;
+      case 'invalid-credential': msg = 'ข้อมูลล็อกอินไม่ถูกต้อง/หมดอายุ กรุณาลองใหม่'; break;
+      case 'invalid-email':    msg = 'รูปแบบอีเมลไม่ถูกต้อง'; break;
+      case 'user-disabled':    msg = 'บัญชีนี้ถูกปิดการใช้งาน'; break;
+      default:                 msg = e.message ?? 'เกิดข้อผิดพลาด (${e.code})';
+    }
+    return AuthResult(success: false, message: msg);
+  } catch (e) {
+    return AuthResult(success: false, message: e.toString());
   }
+}
+
 
   // ------------- Phone (OTP) -------------
   String? _verificationId;

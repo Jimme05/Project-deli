@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_logo.dart';
-import '../models/auth_request.dart';
-import '../services/service.dart';
+import '../models/auth_response.dart';
+import '../services/firebase_auth_service.dart'; // 👈 ใช้ FirebaseAuth แทน SimpleAuthService
 import '../main.dart';
 
 /// mapping ของ role -> route
@@ -20,13 +20,13 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _form = GlobalKey<FormState>();
-  final _phone = TextEditingController();
-  final _pass = TextEditingController();
+  final _email = TextEditingController();
+  final _pass  = TextEditingController();
   bool _loading = false;
 
   @override
   void dispose() {
-    _phone.dispose();
+    _email.dispose();
     _pass.dispose();
     super.dispose();
   }
@@ -54,30 +54,29 @@ class _LoginPageState extends State<LoginPage> {
     if (!_form.currentState!.validate()) return;
     setState(() => _loading = true);
 
-    final res = await SimpleAuthService().login(
-      LoginRequest(phone: _phone.text.trim(), password: _pass.text),
+    final auth = FirebaseAuthService();
+    final res = await auth.loginWithEmail(
+      email: _email.text.trim(),
+      password: _pass.text,
     );
 
     if (!mounted) return;
     setState(() => _loading = false);
 
     if (res.success) {
-      final user = res.user!;
+      final UserResponse user = res.user!;
       final target = _routeForRole(user.role);
 
-      // debug ดูใน console ถ้าจำเป็น
-      // print('role=${user.role} -> route=$target');
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ยินดีต้อนรับ ${user.name} (${user.role})')),
+        SnackBar(content: Text('ยินดีต้อนรับ ${user.name.isEmpty ? user.uid : user.name} (${user.role})')),
       );
 
-      /// 🔑 นำทางและล้างสแตกไม่ให้ย้อนกลับมา login ได้
+      // 🔑 นำทางและล้างสแตกไม่ให้กดย้อนกลับมาที่ login
       Navigator.of(context).pushNamedAndRemoveUntil(target, (route) => false);
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(res.message ?? 'Login ผิดพลาด')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res.message ?? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง')),
+      );
     }
   }
 
@@ -106,17 +105,23 @@ class _LoginPageState extends State<LoginPage> {
                 key: _form,
                 child: Column(
                   children: [
+                    // Email
                     TextFormField(
-                      controller: _phone,
-                      keyboardType: TextInputType.phone,
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        hintText: "หมายเลขโทรศัพท์",
-                        prefixIcon: Icon(Icons.phone_rounded),
+                        hintText: "อีเมล",
+                        prefixIcon: Icon(Icons.email_rounded),
                       ),
-                      validator: (v) =>
-                          v == null || v.isEmpty ? 'กรอกเบอร์โทร' : null,
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return 'กรอกอีเมล';
+                        final ok = RegExp(r"^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$").hasMatch(v.trim());
+                        return ok ? null : 'รูปแบบอีเมลไม่ถูกต้อง';
+                      },
                     ),
                     const SizedBox(height: 12),
+
+                    // Password
                     TextFormField(
                       controller: _pass,
                       obscureText: true,
@@ -124,10 +129,10 @@ class _LoginPageState extends State<LoginPage> {
                         hintText: "รหัสผ่าน",
                         prefixIcon: Icon(Icons.lock_rounded),
                       ),
-                      validator: (v) =>
-                          v == null || v.length < 6 ? 'อย่างน้อย 6 ตัว' : null,
+                      validator: (v) => v == null || v.length < 6 ? 'อย่างน้อย 6 ตัว' : null,
                     ),
                     const SizedBox(height: 18),
+
                     SizedBox(
                       width: double.infinity,
                       height: 48,
@@ -141,26 +146,27 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         onPressed: _loading ? null : _submit,
                         child: _loading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
+                            ? const CircularProgressIndicator(color: Colors.white)
                             : const Text(
                                 "Login",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                               ),
                       ),
                     ),
+
                     const SizedBox(height: 10),
+
                     TextButton(
-                      onPressed: () =>
-                          Navigator.pushNamed(context, '/register'),
-                      child: const Text(
-                        "ยังไม่มีบัญชี? สมัครสมาชิก",
-                        style: TextStyle(color: Colors.white),
-                      ),
+                      onPressed: () => Navigator.pushNamed(context, '/register'),
+                      child: const Text("ยังไม่มีบัญชี? สมัครสมาชิก", style: TextStyle(color: Colors.white)),
+                    ),
+
+                    // (ตัวเลือก) ลืมรหัสผ่าน
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/forgot_password'); // ถ้ามีหน้า reset
+                      },
+                      child: const Text("ลืมรหัสผ่าน?", style: TextStyle(color: Colors.white70)),
                     ),
                   ],
                 ),
