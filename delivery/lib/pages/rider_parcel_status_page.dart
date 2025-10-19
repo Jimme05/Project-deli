@@ -1,9 +1,17 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 class RiderParcelStatusPage extends StatefulWidget {
-  const RiderParcelStatusPage({super.key});
+  final String orderId;
+  final int currentStatus;
+
+  const RiderParcelStatusPage({
+    super.key,
+    required this.orderId,
+    required this.currentStatus,
+  });
 
   @override
   State<RiderParcelStatusPage> createState() => _RiderParcelStatusPageState();
@@ -19,18 +27,24 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage>
   int _currentStep = 0;
 
   final List<String> steps = [
-    'กำลังจัดส่ง',
-    'รอไรเดอร์รับของ',
-    'กำลังเดินทางไปส่ง',
-    'ส่งสินค้าแล้ว',
+    'รอไรเดอร์รับของ', // 1
+    'กำลังมารับของ', // 2
+    'กำลังไปส่ง', // 3
+    'ส่งสินค้าแล้ว', // 4
   ];
 
-  // เก็บแชทรูปภาพ
   final List<File> _chatImages = [];
 
+  @override
+  void initState() {
+    super.initState();
+    _currentStep = widget.currentStatus - 1;
+  }
+
+  // 📸 เลือกรูปแล้วอัปเดตสถานะ
   Future<void> _pickImageAndUpdateStatus() async {
     final XFile? picked = await _picker.pickImage(
-      source: ImageSource.gallery, // แกเลอรี่
+      source: ImageSource.gallery,
       imageQuality: 80,
     );
 
@@ -40,25 +54,57 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage>
         _chatImages.add(_selectedImage!);
       });
 
-      // เมื่อเลือกรูปแล้ว → อัปเดตสถานะ
-      if (_currentStep < steps.length - 1) {
-        setState(() {
-          _currentStep++;
+      final nextStep = (_currentStep + 1).clamp(0, steps.length - 1);
+      final newStatus = nextStep + 1;
+
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(widget.orderId)
+          .update({
+            'Status_order': newStatus,
+            'img_status_$newStatus': picked.path,
+            'updated_at': FieldValue.serverTimestamp(),
+          });
+
+      setState(() {
+        _currentStep = nextStep;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ อัปเดตสถานะเป็น "${steps[nextStep]}" สำเร็จ!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  // ✅ กดยืนยันจบงาน
+  Future<void> _completeJob() async {
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId)
+        .update({
+          'Status_order': 5,
+          'job_done': true,
+          'completed_at': FieldValue.serverTimestamp(),
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('อัปเดตสถานะเป็น "${steps[_currentStep]}" สำเร็จ!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('🎉 งานนี้เสร็จสิ้นเรียบร้อยแล้ว!'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    // กลับไปหน้าก่อนหน้า
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isJobCompleted = _currentStep >= 3; // index 3 = "ส่งสินค้าแล้ว"
+
     return Scaffold(
       backgroundColor: kPageGrey,
       appBar: AppBar(
@@ -73,35 +119,40 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage>
         ),
       ),
 
-      // ปุ่มล่าง: อัปเดตสถานะ (จะเปิดกล้อง/แกลเลอรี่)
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: kGreen,
-        icon: const Icon(Icons.add_a_photo),
-        label: const Text('อัปเดตสถานะด้วยรูปภาพ'),
-        onPressed: _pickImageAndUpdateStatus,
-      ),
+      // 🟢 ปุ่มล่างเปลี่ยนตามสถานะ
+      floatingActionButton: isJobCompleted
+          ? FloatingActionButton.extended(
+              backgroundColor: Colors.green.shade800,
+              icon: const Icon(Icons.check_circle_outline_rounded),
+              label: const Text('จบงาน (ส่งเสร็จแล้ว)'),
+              onPressed: _completeJob,
+            )
+          : FloatingActionButton.extended(
+              backgroundColor: kGreen,
+              icon: const Icon(Icons.add_a_photo),
+              label: const Text('อัปเดตสถานะด้วยรูปภาพ'),
+              onPressed: _pickImageAndUpdateStatus,
+            ),
 
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // ======= จุดสถานะ =======
+            // 🔹 ขั้นตอนสถานะ
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: List.generate(steps.length, (index) {
                 final isActive = index <= _currentStep;
                 return Column(
                   children: [
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 400),
-                      curve: Curves.easeOut,
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
                         color: isActive ? Colors.green : Colors.white,
                         border: Border.all(
-                          color: isActive ? Colors.green : Colors.grey.shade400,
+                          color: isActive ? Colors.green : Colors.grey,
                           width: 2,
                         ),
                         shape: BoxShape.circle,
@@ -120,11 +171,12 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage>
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
-                          height: 1.2,
-                          color: isActive ? Colors.black87 : Colors.black54,
+                          color: isActive
+                              ? Colors.black87
+                              : Colors.grey.shade600,
                           fontWeight: isActive
-                              ? FontWeight.w600
-                              : FontWeight.w400,
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -133,64 +185,23 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage>
               }),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 20),
             const Divider(height: 1, color: Colors.black38),
             const SizedBox(height: 20),
 
-            // ======= แชทรูปภาพ =======
             if (_chatImages.isNotEmpty)
               Column(
                 children: _chatImages.map((file) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const CircleAvatar(
-                          radius: 24,
-                          backgroundColor: Colors.deepPurpleAccent,
-                          child: Icon(Icons.person, color: Colors.white),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'อัปเดต: ${steps[_currentStep]}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    file,
-                                    height: 160,
-                                    width: double.infinity,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        file,
+                        height: 180,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   );
                 }).toList(),
