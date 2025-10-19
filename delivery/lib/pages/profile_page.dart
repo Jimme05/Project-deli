@@ -173,7 +173,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                       onTap: () {
-                        Navigator.pushNamed(context, '/edit_address');
+                        Navigator.pushNamed(context, '/editaddresss');
                       },
                     ),
                   ),

@@ -52,6 +52,7 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
         password: _pass.text,         // ใช้สร้างบัญชีกับ FirebaseAuth
         name: _name.text.trim(),
         primaryAddress: Address(
+          id: '',                     // ไม่ต้องส่ง id ตอนสร้างใหม่
           label: "บ้าน",
           addressText: _addr.text.trim(),
           latitude: 13.75,            // TODO: ต่อ map picker

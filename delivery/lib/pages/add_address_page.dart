@@ -1,15 +1,17 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:delivery/services/firebase_auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fa;
+
 import '../models/address.dart';
 import '../models/order_create_request.dart';
 import '../services/address_service.dart';
-import '../services/order_service.dart';// ✅ ใช้ FirebaseAuth
+import '../services/order_service.dart';
+import '../services/receiver_service.dart';
 import 'map_picker_page.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fa;
+
 class AddAddressPage extends StatefulWidget {
   const AddAddressPage({super.key});
 
@@ -31,7 +33,16 @@ class _AddAddressPageState extends State<AddAddressPage> {
   bool _loading = false;
 
   final _addressService = AddressService();
-  final _auth = FirebaseAuthService();
+  final _receiverService = ReceiverService();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _locationCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickImage() async {
     final XFile? picked = await _picker.pickImage(source: ImageSource.gallery);
@@ -53,89 +64,156 @@ class _AddAddressPageState extends State<AddAddressPage> {
     }
   }
 
-  Future<void> _submit() async {
-  if (_nameCtrl.text.trim().isEmpty ||
-      _phoneCtrl.text.trim().isEmpty ||
-      _picked == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('กรอกชื่อ/เบอร์/เลือกพิกัดให้ครบ')),
-    );
-    return;
-  }
-
-  setState(() => _loading = true);
-  try {
-    // ✅ ใช้ FirebaseAuth ตรง ๆ
-    final u = fa.FirebaseAuth.instance.currentUser;
-    if (u == null) throw Exception("ยังไม่ได้ล็อกอิน");
-    debugPrint("👤 current uid = ${u.uid}");
-
-    // ✅ ดึงที่อยู่ default ของผู้ส่ง
-    final addrSnap = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(u.uid)
-        .collection('addresses')
-        .where('isDefault', isEqualTo: true)
-        .limit(1)
-        .get();
-
-    if (addrSnap.docs.isEmpty) {
-      throw Exception("ไม่พบบ้าน/จุดรับของผู้ส่ง (โปรดเพิ่มที่อยู่หลักก่อน)");
+  Future<void> _chooseReceiverAddress() async {
+    final phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรอกเบอร์ผู้รับก่อน')),
+      );
+      return;
     }
 
-    final a = addrSnap.docs.first.data();
-    final pickup = Address(
-      label: a['label'] ?? 'บ้าน',
-      addressText: a['addressText'] ?? '',
-      latitude: (a['Latitude'] as num).toDouble(),
-      longitude: (a['Longitude'] as num).toDouble(),
-    );
+    try {
+      final receiver = await _receiverService.findReceiverByPhone(phone);
+      if (receiver == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('ไม่พบข้อมูลของเบอร์ $phone')),
+        );
+        return;
+      }
+      if (receiver.addresses.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ผู้รับยังไม่มีที่อยู่บันทึกไว้')),
+        );
+        return;
+      }
 
-    // ✅ ปลายทางจากฟอร์ม
-    final delivery = Address(
-      label: "ปลายทาง",
-      addressText: _descCtrl.text.trim(),
-      latitude: _picked!.latitude,
-      longitude: _picked!.longitude,
-    );
+      final chosen = await showModalBottomSheet<Address>(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (_) => ListView.separated(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemCount: receiver.addresses.length,
+          itemBuilder: (_, i) {
+            final a = receiver.addresses[i];
+            return ListTile(
+              leading: Icon(
+                a.isDefault ? Icons.star_rounded : Icons.place_rounded,
+                color: a.isDefault ? Colors.amber : Colors.black54,
+              ),
+              title: Text(a.label),
+              subtitle: Text(a.addressText),
+              trailing: Text(
+                '${a.latitude.toStringAsFixed(5)}, ${a.longitude.toStringAsFixed(5)}',
+                style: const TextStyle(color: Colors.black54),
+              ),
+              onTap: () => Navigator.pop(context, a),
+            );
+          },
+        ),
+      );
 
-    // ✅ หา UID ของผู้รับจากเบอร์
-    final phone = _phoneCtrl.text.trim();
-    final q = await FirebaseFirestore.instance
-        .collection('users')
-        .where('phone', isEqualTo: phone)
-        .limit(1)
-        .get();
-    final receiverUid = q.docs.isNotEmpty ? q.docs.first.id : "";
-
-    final req = OrderCreateRequest(
-      senderUid: u.uid,
-      receiverUid: receiverUid,
-      receiverPhone: phone,
-      receiverName: _nameCtrl.text.trim(),
-      pickupAddress: pickup,
-      deliveryAddress: delivery,
-      description: _descCtrl.text.trim(),
-      status1ImageFile: _selectedImage,
-    );
-
-    final oid = await OrderService().createOrder(req);
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('✅ สร้างออเดอร์สำเร็จ (OID: $oid)')),
-    );
-    _clearForm();
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('⚠️ เกิดข้อผิดพลาด: $e')),
-    );
-  } finally {
-    if (mounted) setState(() => _loading = false);
+      if (chosen != null) {
+        setState(() {
+          _picked = LatLng(chosen.latitude, chosen.longitude);
+          _locationCtrl.text =
+              "${chosen.latitude.toStringAsFixed(6)}, ${chosen.longitude.toStringAsFixed(6)}";
+          _descCtrl.text = chosen.addressText;
+          if (_nameCtrl.text.isEmpty && receiver.name.isNotEmpty) {
+            _nameCtrl.text = receiver.name;
+          }
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ดึงที่อยู่ผู้รับไม่สำเร็จ: $e')),
+      );
+    }
   }
-}
 
+  Future<void> _submit() async {
+    if (_nameCtrl.text.trim().isEmpty ||
+        _phoneCtrl.text.trim().isEmpty ||
+        _picked == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรอกชื่อ/เบอร์/เลือกพิกัดให้ครบ')),
+      );
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final u = fa.FirebaseAuth.instance.currentUser;
+      if (u == null) throw Exception("ยังไม่ได้ล็อกอิน");
+
+      // pickup: default address ของผู้ส่ง
+      final addrSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(u.uid)
+          .collection('addresses')
+          .where('isDefault', isEqualTo: true)
+          .limit(1)
+          .get();
+      if (addrSnap.docs.isEmpty) {
+        throw Exception("ไม่พบบ้าน/จุดรับของผู้ส่ง (โปรดเพิ่มที่อยู่หลักก่อน)");
+      }
+      final a = addrSnap.docs.first.data();
+      final pickup = Address(
+        id: addrSnap.docs.first.id,
+        label: a['label'] ?? 'บ้าน',
+        addressText: a['addressText'] ?? '',
+        latitude: (a['Latitude'] as num).toDouble(),
+        longitude: (a['Longitude'] as num).toDouble(),
+      );
+
+      // delivery: จากฟอร์ม/ที่เลือก
+      final delivery = Address(
+        id: '',
+        label: "ปลายทาง",
+        addressText: _descCtrl.text.trim(),
+        latitude: _picked!.latitude,
+        longitude: _picked!.longitude,
+      );
+
+      // หา UID ผู้รับจากเบอร์
+      final phone = _phoneCtrl.text.trim();
+      final q = await FirebaseFirestore.instance
+          .collection('users')
+          .where('phone', isEqualTo: phone)
+          .limit(1)
+          .get();
+      final receiverUid = q.docs.isNotEmpty ? q.docs.first.id : "";
+
+      final req = OrderCreateRequest(
+        senderUid: u.uid,
+        receiverUid: receiverUid,
+        receiverPhone: phone,
+        receiverName: _nameCtrl.text.trim(),
+        pickupAddress: pickup,
+        deliveryAddress: delivery,
+        description: _descCtrl.text.trim(),
+        status1ImageFile: _selectedImage,
+      );
+
+      final oid = await OrderService().createOrder(req);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ สร้างออเดอร์สำเร็จ (OID: $oid)')),
+      );
+      _clearForm();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ เกิดข้อผิดพลาด: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   void _clearForm() {
     _nameCtrl.clear();
@@ -148,6 +226,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
     });
   }
 
+  // ----------------- ⬇️ นี่คือเมธอด build ที่ “ต้องมี” ⬇️ -----------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -169,6 +248,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ตัวช่วย
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -178,27 +258,55 @@ class _AddAddressPageState extends State<AddAddressPage> {
                     child: const Text(
                       'เลือกจากแผนที่',
                       style: TextStyle(
-                          color: Colors.blue,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 15),
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ],
               ),
               const Divider(thickness: 1),
               const SizedBox(height: 12),
+
               _buildTextField(_nameCtrl, 'ชื่อผู้รับ', TextInputType.name),
               const SizedBox(height: 10),
-              _buildTextField(_phoneCtrl, 'เบอร์โทรศัพท์', TextInputType.phone),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildTextField(
+                      _phoneCtrl,
+                      'เบอร์โทรศัพท์ผู้รับ',
+                      TextInputType.phone,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: _chooseReceiverAddress,
+                    child: const Text('ใช้ที่อยู่ผู้รับจากเบอร์'),
+                  ),
+                ],
+              ),
               const SizedBox(height: 10),
-              _buildTextField(_locationCtrl, 'โปรดเลือกพิกัดปลายทาง',
-                  TextInputType.text,
-                  readOnly: true),
+
+              _buildTextField(
+                _locationCtrl,
+                'โปรดเลือกพิกัดปลายทาง',
+                TextInputType.text,
+                readOnly: true,
+              ),
               const SizedBox(height: 10),
-              _buildTextField(_descCtrl, 'รายละเอียดที่อยู่ผู้รับ',
-                  TextInputType.multiline,
-                  maxLines: 3),
+
+              _buildTextField(
+                _descCtrl,
+                'รายละเอียดที่อยู่ผู้รับ',
+                TextInputType.multiline,
+                maxLines: 3,
+              ),
+
               const SizedBox(height: 20),
+
               Center(
                 child: Column(
                   children: [
@@ -213,12 +321,11 @@ class _AddAddressPageState extends State<AddAddressPage> {
                           border: Border.all(color: Colors.grey.shade400),
                         ),
                         child: _selectedImage == null
-                            ? const Icon(Icons.add_a_photo,
-                                size: 40, color: Colors.grey)
+                            ? const Icon(Icons.add_a_photo, size: 40, color: Colors.grey)
                             : ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.file(_selectedImage!,
-                                    fit: BoxFit.cover)),
+                                child: Image.file(_selectedImage!, fit: BoxFit.cover),
+                              ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -226,7 +333,9 @@ class _AddAddressPageState extends State<AddAddressPage> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 24),
+
               Center(
                 child: SizedBox(
                   width: 140,
@@ -236,14 +345,16 @@ class _AddAddressPageState extends State<AddAddressPage> {
                       backgroundColor: kGreen,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                     onPressed: _loading ? null : _submit,
                     child: _loading
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('สำเร็จ',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w600)),
+                        : const Text(
+                            'สำเร็จ',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
                   ),
                 ),
               ),
@@ -253,10 +364,15 @@ class _AddAddressPageState extends State<AddAddressPage> {
       ),
     );
   }
+  // ----------------- ⬆️ อย่าลืมให้ build() อยู่ “ในคลาส” ⬆️ -----------------
 
-  Widget _buildTextField(TextEditingController ctrl, String hint,
-      TextInputType type,
-      {bool readOnly = false, int maxLines = 1}) {
+  Widget _buildTextField(
+    TextEditingController ctrl,
+    String hint,
+    TextInputType type, {
+    bool readOnly = false,
+    int maxLines = 1,
+  }) {
     return TextField(
       controller: ctrl,
       readOnly: readOnly,

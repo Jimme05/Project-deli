@@ -1,196 +1,288 @@
-// lib/pages/map_picker_page.dart
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
+
+/// ผลลัพธ์ที่จะส่งกลับไปหน้าก่อนหน้า
+class MapPickerResult {
+  final LatLng latlng;
+  final String? address;
+  MapPickerResult({required this.latlng, this.address});
+}
 
 class MapPickerPage extends StatefulWidget {
-  final LatLng initial;
-  const MapPickerPage({super.key, required this.initial});
+  const MapPickerPage({super.key, this.initial});
+
+  /// จุดเริ่มต้นของแผนที่ (ถ้าไม่ส่งมา จะไปที่ กทม.)
+  final LatLng? initial;
 
   @override
   State<MapPickerPage> createState() => _MapPickerPageState();
 }
 
 class _MapPickerPageState extends State<MapPickerPage> {
-  final _map = MapController();
+  static const _defaultCenter = LatLng(13.7563, 100.5018); // กทม.
+  final _mapController = MapController();
   final _searchCtrl = TextEditingController();
 
-  LatLng? _picked;
-  Timer? _debounce;
-  bool _searching = false;
-  List<_Place> _results = [];
+  LatLng _pos = _defaultCenter;    // ตำแหน่งหมุด
+  String? _address;                // ข้อความที่อยู่ (reverse / search)
+  bool _locating = false;
+  bool _geocoding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pos = widget.initial ?? _defaultCenter;
+    // ลอง reverse geocode จุดตั้งต้นสั้น ๆ (ไม่บังคับ)
+    _reverseGeocode(_pos);
+  }
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _searchPlaces(String q) async {
-    if (q.trim().isEmpty) {
-      setState(() => _results = []);
-      return;
-    }
-    setState(() => _searching = true);
+  // ---------- Geocoding helpers (Nominatim) ----------
 
-    final uri = Uri.parse(
-      'https://nominatim.openstreetmap.org/search'
-      '?q=${Uri.encodeQueryComponent(q)}&format=json&limit=8',
+  /// forward geocode: จากข้อความ → latlng
+  Future<void> _searchByText(String q) async {
+    if (q.trim().isEmpty) return;
+    setState(() => _geocoding = true);
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeQueryComponent(q)}'
+        '&format=json&addressdetails=1&limit=1'
+      );
+      final res = await http.get(uri, headers: {
+        'User-Agent': 'deli-app/1.0 (edu example)'
+      });
+      if (res.statusCode == 200) {
+        final arr = jsonDecode(res.body) as List;
+        if (arr.isNotEmpty) {
+          final m = arr.first as Map<String, dynamic>;
+          final lat = double.tryParse(m['lat']?.toString() ?? '');
+          final lon = double.tryParse(m['lon']?.toString() ?? '');
+          if (lat != null && lon != null) {
+            final ll = LatLng(lat, lon);
+            setState(() {
+              _pos = ll;
+              _address = m['display_name']?.toString();
+            });
+            _mapController.move(ll, 16);
+          }
+        } else {
+          _snack('ไม่พบผลลัพธ์ที่อยู่ "$q"');
+        }
+      } else {
+        _snack('ค้นหาที่อยู่ไม่สำเร็จ (${res.statusCode})');
+      }
+    } catch (e) {
+      _snack('ค้นหาที่อยู่ผิดพลาด: $e');
+    } finally {
+      if (mounted) setState(() => _geocoding = false);
+    }
+  }
+
+  /// reverse geocode: จาก latlng → ข้อความที่อยู่
+  Future<void> _reverseGeocode(LatLng p) async {
+    setState(() => _geocoding = true);
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse'
+        '?lat=${p.latitude}&lon=${p.longitude}'
+        '&format=json&addressdetails=1'
+      );
+      final res = await http.get(uri, headers: {
+        'User-Agent': 'deli-app/1.0 (edu example)'
+      });
+      if (res.statusCode == 200) {
+        final m = jsonDecode(res.body) as Map<String, dynamic>;
+        setState(() => _address = m['display_name']?.toString());
+      } else {
+        _snack('ดึงที่อยู่ไม่สำเร็จ (${res.statusCode})');
+      }
+    } catch (e) {
+      _snack('ดึงที่อยู่ผิดพลาด: $e');
+    } finally {
+      if (mounted) setState(() => _geocoding = false);
+    }
+  }
+
+  // ---------- Current location ----------
+
+  Future<void> _goToMyLocation() async {
+    setState(() => _locating = true);
+    try {
+      final perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        final p2 = await Geolocator.requestPermission();
+        if (p2 == LocationPermission.denied || p2 == LocationPermission.deniedForever) {
+          _snack('ไม่ได้รับสิทธิ์ตำแหน่ง');
+          setState(() => _locating = false);
+          return;
+        }
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final ll = LatLng(pos.latitude, pos.longitude);
+      setState(() => _pos = ll);
+      _mapController.move(ll, 16);
+      _reverseGeocode(ll);
+    } catch (e) {
+      _snack('อ่านตำแหน่งปัจจุบันไม่ได้: $e');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  // ---------- UI ----------
+
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  void _onMapTap(TapPosition tapPos, LatLng latlng) {
+    setState(() => _pos = latlng);
+    _reverseGeocode(latlng);
+  }
+
+  void _confirm() {
+    Navigator.pop<MapPickerResult>(
+      context,
+      MapPickerResult(latlng: _pos, address: _address),
     );
-    // ใส่ User-Agent ตามข้อกำหนดของ Nominatim
-    final res = await http.get(uri, headers: {'User-Agent': 'delivery-app/1.0 (example@example.com)'});
-    if (res.statusCode == 200) {
-      final List data = json.decode(res.body) as List;
-      final list = data.map((e) => _Place(
-        displayName: e['display_name'] ?? '',
-        lat: double.parse(e['lat']),
-        lon: double.parse(e['lon']),
-      )).toList();
-      setState(() {
-        _results = list;
-        _searching = false;
-      });
-    } else {
-      setState(() {
-        _results = [];
-        _searching = false;
-      });
-    }
-  }
-
-  void _onChangedSearch(String v) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 450), () => _searchPlaces(v));
-  }
-
-  void _selectPlace(_Place p) {
-    final pos = LatLng(p.lat, p.lon);
-    setState(() {
-      _picked = pos;
-      _searchCtrl.text = p.displayName;
-      _results = [];
-    });
-    _map.move(pos, 16);
   }
 
   @override
   Widget build(BuildContext context) {
-    final markers = <Marker>[];
-    if (_picked != null) {
-      markers.add(Marker(
-        width: 40, height: 40, point: _picked!,
-        child: const Icon(Icons.location_on, color: Colors.red, size: 36),
-      ));
-    }
+    final green = const Color(0xFF6AA56F);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("เลือกตำแหน่ง")),
-      body: Stack(
+      appBar: AppBar(
+        backgroundColor: green,
+        title: const Text('เลือกตำแหน่งบนแผนที่',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          IconButton(
+            onPressed: _locating ? null : _goToMyLocation,
+            icon: _locating
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.my_location, color: Colors.black),
+          )
+        ],
+      ),
+      body: Column(
         children: [
-          FlutterMap(
-            mapController: _map,
-            options: MapOptions(
-              initialCenter: widget.initial,
-              initialZoom: 15,
-              onTap: (tapPos, latlng) => setState(() => _picked = latlng),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.your.app',
-              ),
-              MarkerLayer(markers: markers),
-            ],
-          ),
-
-          // กล่องค้นหา
-          Positioned(
-            left: 12, right: 12, top: 12,
-            child: Column(
+          // Search bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: Row(
               children: [
-                Material(
-                  elevation: 2,
-                  borderRadius: BorderRadius.circular(12),
+                Expanded(
                   child: TextField(
                     controller: _searchCtrl,
-                    onChanged: _onChangedSearch,
                     decoration: InputDecoration(
-                      hintText: "ค้นหาที่อยู่/สถานที่ (OSM)",
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searching ? const Padding(
-                        padding: EdgeInsets.all(10.0),
-                        child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                      ) : (_searchCtrl.text.isEmpty ? null : IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: (){
-                          _searchCtrl.clear();
-                          setState(() => _results = []);
-                        },
-                      )),
+                      hintText: 'พิมพ์ที่อยู่/สถานที่ เพื่อค้นหา',
                       filled: true,
                       fillColor: Colors.white,
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: (_searchCtrl.text.isNotEmpty || _geocoding)
+                          ? IconButton(
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() {});
+                              },
+                              icon: const Icon(Icons.clear),
+                            )
+                          : null,
                       border: OutlineInputBorder(
-                        borderSide: BorderSide.none,
                         borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
                       ),
                     ),
+                    onSubmitted: _searchByText,
+                    onChanged: (_) => setState(() {}),
+                    textInputAction: TextInputAction.search,
                   ),
                 ),
-
-                // รายการผลลัพธ์
-                if (_results.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6)],
-                    ),
-                    constraints: const BoxConstraints(maxHeight: 260),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _results.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final p = _results[i];
-                        return ListTile(
-                          leading: const Icon(Icons.place_outlined),
-                          title: Text(
-                            p.displayName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          onTap: () => _selectPlace(p),
-                        );
-                      },
-                    ),
-                  ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _geocoding ? null : () => _searchByText(_searchCtrl.text),
+                  child: _geocoding
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('ค้นหา'),
+                ),
               ],
             ),
           ),
 
-          // ปุ่มยืนยัน
-          Positioned(
-            left: 16, right: 16, bottom: 24,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('ยืนยันตำแหน่งนี้'),
-              onPressed: _picked == null ? null : () => Navigator.pop(context, _picked),
+          Expanded(
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _pos,
+                initialZoom: 15,
+                onTap: _onMapTap,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.deliapp',
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _pos,
+                      width: 48,
+                      height: 48,
+                      child: const Icon(Icons.location_pin, size: 48, color: Colors.red),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // แถบแสดงที่อยู่ + ปุ่มยืนยัน
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12 + 8),
+            color: Colors.white,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_address ?? 'แตะที่แผนที่เพื่อเลือกตำแหน่ง',
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 8),
+                Text('ละติจูด: ${_pos.latitude.toStringAsFixed(6)}  '
+                     'ลองจิจูด: ${_pos.longitude.toStringAsFixed(6)}',
+                    style: const TextStyle(color: Colors.black54)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed: _confirm,
+                    icon: const Icon(Icons.check),
+                    label: const Text('ใช้ตำแหน่งนี้'),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class _Place {
-  final String displayName;
-  final double lat;
-  final double lon;
-  _Place({required this.displayName, required this.lat, required this.lon});
 }
