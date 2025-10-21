@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:delivery/pages/rider_accepted_orders_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 class RiderProfilePage extends StatefulWidget {
   const RiderProfilePage({super.key});
@@ -18,6 +21,35 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
 
+  StreamSubscription<Position>? _posSub; // realtime location stream
+  bool _startingShare = false;
+
+  @override
+  void dispose() {
+    _stopLocationStream();
+    super.dispose();
+  }
+  Future<bool> ensureLocationPermission(BuildContext context) async {
+  if (!await Geolocator.isLocationServiceEnabled()) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('กรุณาเปิด Location Service')),
+    );
+    return false;
+  }
+
+  var p = await Geolocator.checkPermission();
+  if (p == LocationPermission.denied) {
+    p = await Geolocator.requestPermission();
+  }
+  if (p == LocationPermission.denied ||
+      p == LocationPermission.deniedForever) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('ไม่ได้รับสิทธิ์ตำแหน่ง')),
+    );
+    return false;
+  }
+  return true;
+}
   Future<void> _logout(BuildContext context) async {
     try {
       await _auth.signOut();
@@ -36,25 +68,111 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
     }
   }
 
-  /// 🟢 รับออเดอร์ — อัปเดต Firestore ให้มี assignedRiderId + สถานะใหม่
-  Future<void> _acceptOrder(String orderId) async {
+  // ============ Realtime location sharing ============
+  Future<void> _startLocationStream(String orderId) async {
+    if (_posSub != null) return; // already running
+
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
+    // ขอ permission
+    final perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      final p2 = await Geolocator.requestPermission();
+      if (p2 == LocationPermission.denied ||
+          p2 == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่ได้รับสิทธิ์ตำแหน่ง: ไม่สามารถแชร์พิกัดได้')),
+        );
+        return;
+      }
+    }
+
+    // เปิด service หากปิดอยู่ (บางเครื่องต้องเปิด Location Service)
+    final serviceOn = await Geolocator.isLocationServiceEnabled();
+    if (!serviceOn) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเปิด Location Service')),
+      );
+    }
+
+    // เริ่มสตรีมและอัปเดตพิกัดไปที่ riders/{uid}
+    _posSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 5, // อัปเดตเมื่อเคลื่อนที่ >= 5 เมตร
+      ),
+    ).listen((pos) async {
+      await _db.collection('riders').doc(uid).set({
+        'latitude': pos.latitude,
+        'longitude': pos.longitude,
+        'last_update': FieldValue.serverTimestamp(),
+        'current_order_id': orderId,
+        'Status-rider': 'busy',
+      }, SetOptions(merge: true));
+    });
+  }
+
+  Future<void> _stopLocationStream() async {
+    await _posSub?.cancel();
+    _posSub = null;
+  }
+
+  /// 🟢 รับออเดอร์ — ตรวจสถานะ, อัปเดต order+rider, แล้วเริ่มแชร์พิกัดเรียลไทม์
+  Future<void> _acceptOrder(String orderId) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    final ok = await ensureLocationPermission(context);
+    if (!ok) return;
+// เริ่ม update พิกัด rider ได้เลย
+
+    setState(() => _startingShare = true);
     try {
+      // 1) โหลดสเตตัสไรเดอร์มาก่อน ถ้า busy ห้ามรับ
+      final riderDoc = await _db.collection('riders').doc(uid).get();
+      final r = riderDoc.data() ?? {};
+      final status = (r['Status-rider'] ?? 'idle').toString();
+      final currentOrder = (r['current_order_id'] ?? '').toString();
+
+      if (status != 'idle' || currentOrder.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('คุณมีงานค้างอยู่ กรุณาส่งงานเดิมให้เสร็จก่อนรับงานใหม่'),
+          ),
+        );
+        return;
+      }
+
+      // 2) อัปเดตออเดอร์ -> มอบหมายให้ rider และตั้งสถานะ 2
       await _db.collection('orders').doc(orderId).update({
         'assignedRiderId': uid,
-        'Status_order': 2, // เปลี่ยนสถานะเป็น "กำลังมารับของ"
+        'Status_order': 2, // "กำลังมารับของ"
         'accepted_at': FieldValue.serverTimestamp(),
       });
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('✅ รับออเดอร์สำเร็จ')));
+      // 3) อัปเดตไรเดอร์ -> busy + current_order_id
+      await _db.collection('riders').doc(uid).set({
+        'Status-rider': 'busy',
+        'current_order_id': orderId,
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // 4) เริ่มแชร์พิกัดเรียลไทม์
+      await _startLocationStream(orderId);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ รับออเดอร์สำเร็จ และเริ่มแชร์พิกัดเรียลไทม์')),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('❌ รับออเดอร์ไม่สำเร็จ: $e')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ รับออเดอร์ไม่สำเร็จ: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _startingShare = false);
     }
   }
 
@@ -67,7 +185,7 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
 
     final riderProfileFuture = _db.collection('users').doc(uid).get();
 
-    // 🔹 ดึงออเดอร์ทั้งหมดที่ยังไม่มี assignedRiderId (คือยังรอไรเดอร์)
+    // ออเดอร์ที่ยังไม่มีไรเดอร์ และสถานะ = 1 (รอไรเดอร์)
     final waitingOrdersStream = _db
         .collection('orders')
         .where('Status_order', isEqualTo: 1)
@@ -91,9 +209,35 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
             fontWeight: FontWeight.w600,
           ),
         ),
+        actions: [
+          // แสดงสถานะไรเดอร์ (idle/busy) แบบเรียลไทม์
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: _db.collection('riders').doc(uid).snapshots(),
+            builder: (context, snap) {
+              final status =
+                  (snap.data?.data()?['Status-rider'] ?? 'idle').toString();
+              final busy = status != 'idle';
+              return Container(
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: busy ? Colors.orange.shade100 : Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  busy ? 'สถานะ: ไม่ว่าง' : 'สถานะ: ว่าง',
+                  style: TextStyle(
+                    color: busy ? Colors.orange.shade800 : Colors.green.shade800,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
 
-      // 🔴 ปุ่มออกจากระบบ
+      // Logout
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: SizedBox(
@@ -130,14 +274,11 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
             final name = (riderData['name'] ?? 'ชื่อไรเดอร์').toString();
             final phone = (riderData['phone'] ?? 'ไม่ระบุเบอร์').toString();
             final license =
-                (riderData['license'] ??
-                        riderData['vehiclePlate'] ??
-                        'ไม่ระบุทะเบียน')
+                (riderData['license'] ?? riderData['vehiclePlate'] ?? 'ไม่ระบุทะเบียน')
                     .toString();
-            final photoUrl =
-                (riderData['photoUrl'] ??
-                        'https://cdn-icons-png.flaticon.com/512/147/147142.png')
-                    .toString();
+            final photoUrl = (riderData['photoUrl'] ??
+                    'https://cdn-icons-png.flaticon.com/512/147/147142.png')
+                .toString();
 
             return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: waitingOrdersStream,
@@ -151,7 +292,7 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                   children: [
-                    // ==== โปรไฟล์ส่วนบน ====
+                    // Profile header
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -176,7 +317,7 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
 
                     const SizedBox(height: 10),
 
-                    // 🔹 ปุ่มดูออเดอร์ที่รับแล้ว
+                    // ไปหน้าออเดอร์ที่รับแล้ว
                     SizedBox(
                       width: double.infinity,
                       height: 44,
@@ -227,8 +368,7 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
                         final data = doc.data();
                         final oid = doc.id;
                         final receiver = (data['Name'] ?? '-').toString();
-                        final phone = (data['receiver_phone'] ?? '-')
-                            .toString();
+                        final phone = (data['receiver_phone'] ?? '-').toString();
                         final addr =
                             (data['delivery_address']?['addressText'] ?? '-')
                                 .toString();
@@ -275,11 +415,22 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
                                       borderRadius: BorderRadius.circular(24),
                                     ),
                                   ),
-                                  onPressed: () => _acceptOrder(oid),
-                                  child: const Text(
-                                    "รับออเดอร์นี้",
-                                    style: TextStyle(fontSize: 15),
-                                  ),
+                                  onPressed: _startingShare
+                                      ? null
+                                      : () => _acceptOrder(oid),
+                                  child: _startingShare
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Text(
+                                          "รับออเดอร์นี้",
+                                          style: TextStyle(fontSize: 15),
+                                        ),
                                 ),
                               ),
                             ],

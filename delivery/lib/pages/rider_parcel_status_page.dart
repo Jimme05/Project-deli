@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../services/http_upload_service.dart'; // <- อัปโหลดรูปไป http://202.28.34.203:30000/upload
+import '../services/http_upload_service.dart';
 
 class RiderParcelStatusPage extends StatefulWidget {
   final String orderId;
@@ -26,12 +30,12 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
   final ImagePicker _picker = ImagePicker();
   bool _working = false;
 
-  /// ขั้นตอนสำหรับไรเดอร์ (เราเริ่มนับจากสถานะ 2)
-  /// index 0 -> status 2, index 1 -> status 3, index 2 -> status 4
+  // ถ้าแอปคุณมีการแชร์พิกัดแบบ stream จากที่อื่น ให้เอามา cancel ที่นี่เมื่อจบงาน
+  StreamSubscription<Position>? _posSub;
+
   final List<String> _steps = ['กำลังมารับของ', 'กำลังไปส่ง', 'ส่งสินค้าแล้ว'];
 
   int _stepIndexFromStatus(int status) {
-    // 2 -> 0, 3 -> 1, 4 -> 2, ต่ำกว่า 2 ปัดขึ้นเป็น 0
     final idx = status - 2;
     if (idx < 0) return 0;
     if (idx >= _steps.length) return _steps.length - 1;
@@ -40,9 +44,57 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
 
   int _statusFromStepIndex(int idx) => idx + 2;
 
-  /// อัปโหลดรูปและขยับสถานะ (2->3 / 3->4)
+  // ---------------- Directions helpers ----------------
+
+  Future<void> _openDirectionsTo(double lat, double lng, {String? label}) async {
+    // ใช้ Google Maps universal link; ถ้ามีแอปจะเปิดแอปอัตโนมัติ
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=$lat,$lng'
+      '&travelmode=driving',
+    );
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('เปิดแอปแผนที่ไม่สำเร็จ')),
+      );
+    }
+  }
+
+  /// เป้าหมายตามสถานะ: 2 -> pickup, 3 -> delivery
+  Future<void> _navigateByStatus(Map<String, dynamic> m, int status) async {
+    if (status == 2) {
+      final p = m['pickup_address'] as Map<String, dynamic>?;
+      final lat = (p?['Latitude'] as num?)?.toDouble();
+      final lng = (p?['Longitude'] as num?)?.toDouble();
+      if (lat == null || lng == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่พบพิกัดจุดรับของ')),
+        );
+        return;
+      }
+      await _openDirectionsTo(lat, lng);
+    } else if (status == 3) {
+      final d = m['delivery_address'] as Map<String, dynamic>?;
+      final lat = (d?['Latitude'] as num?)?.toDouble();
+      final lng = (d?['Longitude'] as num?)?.toDouble();
+      if (lat == null || lng == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่พบพิกัดที่อยู่ผู้รับ')),
+        );
+        return;
+      }
+      await _openDirectionsTo(lat, lng);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('งานนี้เสร็จสิ้นหรือยังไม่พร้อมนำทาง')),
+      );
+    }
+  }
+
+  // ---------------- Status update with photo ----------------
+
   Future<void> _pickImageAndAdvance(int currentStatus) async {
-    // อนุญาตอัปโหลดเฉพาะจาก 2 ไป 3 (รูปเก็บที่ img_status_3) และ 3 ไป 4 (img_status_4)
     if (currentStatus >= 4) return;
 
     final XFile? picked =
@@ -53,13 +105,13 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
     try {
       final file = File(picked.path);
 
-      // อัปโหลดไป HTTP server ที่กำหนด
-      final up = await HttpUploadService()
-          .uploadFile(file, customName: "order_${widget.orderId}_s${currentStatus + 1}.jpg");
+      final up = await HttpUploadService().uploadFile(
+        file,
+        customName: "order_${widget.orderId}_s${currentStatus + 1}.jpg",
+      );
 
       final nextStatus = currentStatus + 1;
-      final imgField =
-          nextStatus == 3 ? 'img_status_3' : 'img_status_4'; // ตามสเปค
+      final imgField = nextStatus == 3 ? 'img_status_3' : 'img_status_4';
       final nameField =
           nextStatus == 3 ? 'img_status_3_name' : 'img_status_4_name';
 
@@ -75,7 +127,11 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('อัปเดตสถานะเป็น "${_steps[_stepIndexFromStatus(nextStatus)]}" สำเร็จ')),
+        SnackBar(
+          content: Text(
+            'อัปเดตสถานะเป็น "${_steps[_stepIndexFromStatus(nextStatus)]}" สำเร็จ',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -87,6 +143,56 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
     }
   }
 
+  // ---------------- Complete job: set rider idle + stop sharing ----------------
+
+  Future<void> _completeJob() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    setState(() => _working = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(widget.orderId)
+          .update({
+        'Status_order': 4,
+        'job_done': true,
+        'completed_at': FieldValue.serverTimestamp(),
+      });
+
+      await FirebaseFirestore.instance.collection('riders').doc(uid).set({
+        'Status-rider': 'idle',
+        'current_order_id': FieldValue.delete(),
+        'latitude': FieldValue.delete(),
+        'longitude': FieldValue.delete(),
+        'last_update': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      try {
+        await _posSub?.cancel();
+      } catch (_) {}
+      _posSub = null;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🎉 งานนี้เสร็จสิ้นแล้ว และคุณกลับไปสถานะ “ว่าง”'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ปิดงานไม่สำเร็จ: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  // ---------------- UI ----------------
+
   @override
   Widget build(BuildContext context) {
     final docRef =
@@ -96,15 +202,15 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
       backgroundColor: kPageGrey,
       appBar: AppBar(
         backgroundColor: kGreen,
-        title: const Text('สถานะพัสดุ',
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+        title: const Text(
+          'สถานะพัสดุ',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-
-      // ใช้ StreamBuilder เพื่ออัปเดตแบบเรียลไทม์ (สถานะ/รูป)
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: docRef.snapshots(),
         builder: (context, snap) {
@@ -123,30 +229,32 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
           return Stack(
             children: [
               SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // แถบขั้นตอน
                     _stepper(stepIndex),
-
+                    const SizedBox(height: 12),
+                    if (status == 2) _riderPickupBanner(),
                     const SizedBox(height: 16),
                     const Divider(height: 1),
-
                     const SizedBox(height: 16),
                     _infoRow('สถานะปัจจุบัน', _steps[stepIndex]),
                     _infoRow('ผู้รับ', (m['Name'] ?? '-').toString()),
-                    _infoRow('เบอร์ผู้รับ',
-                        (m['receiver_phone'] ?? '-').toString()),
-                    _infoRow('ที่อยู่ปลายทาง',
-                        (m['delivery_address']?['addressText'] ?? '-').toString()),
-                    _infoRow('รับงานจากผู้ส่ง',
-                        (m['pickup_address']?['addressText'] ?? '-').toString()),
+                    _infoRow(
+                        'เบอร์ผู้รับ', (m['receiver_phone'] ?? '-').toString()),
+                    _infoRow(
+                      'ที่อยู่ปลายทาง',
+                      (m['delivery_address']?['addressText'] ?? '-')
+                          .toString(),
+                    ),
+                    _infoRow(
+                      'รับงานจากผู้ส่ง',
+                      (m['pickup_address']?['addressText'] ?? '-').toString(),
+                    ),
                     _infoRow('สร้างเมื่อ', _formatDate(m['created_at'])),
-
                     const SizedBox(height: 16),
 
-                    // รูปที่แนบในแต่ละสถานะ (ถ้ามี)
                     if ((img1 ?? '').isNotEmpty) ...[
                       const Text('รูปสถานะ [1] (ผู้ส่งแนบ):'),
                       const SizedBox(height: 8),
@@ -165,7 +273,6 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                       _netImage(img4!),
                       const SizedBox(height: 16),
                     ],
-
                     if (isDelivered)
                       Center(
                         child: Container(
@@ -178,8 +285,9 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                           child: const Text(
                             'งานนี้จัดส่งเสร็จสิ้นแล้ว',
                             style: TextStyle(
-                                color: Colors.green,
-                                fontWeight: FontWeight.w700),
+                              color: Colors.green,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
@@ -187,39 +295,68 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                 ),
               ),
 
-              // ปุ่มล่าง (อัปเดตสถานะด้วยรูป)
+              // แถบปุ่มล่าง: นำทาง + อัปเดตสถานะ/จบงาน
               Positioned(
                 left: 16,
                 right: 16,
                 bottom: 16,
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          isDelivered ? Colors.grey : kGreen,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ปุ่มนำทาง (ซ่อนเมื่อ status >= 4)
+                    if (!isDelivered)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black87,
+                            side: BorderSide(color: Colors.black.withOpacity(0.4)),
+                            backgroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.navigation_rounded),
+                          label: Text(
+                            status == 2
+                                ? 'นำทางไปจุดรับของ'
+                                : 'นำทางไปที่อยู่ผู้รับ',
+                          ),
+                          onPressed: () => _navigateByStatus(m, status),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              isDelivered ? Colors.red.shade600 : kGreen,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        icon: Icon(
+                          isDelivered ? Icons.flag_rounded : Icons.add_a_photo,
+                        ),
+                        label: Text(
+                          isDelivered
+                              ? 'จบงาน และกลับไปว่าง'
+                              : (status == 2
+                                  ? 'อัปเดตเป็นสถานะ [3] แนบรูป'
+                                  : 'อัปเดตเป็นสถานะ [4] แนบรูป'),
+                        ),
+                        onPressed: _working
+                            ? null
+                            : (isDelivered
+                                ? _completeJob
+                                : () => _pickImageAndAdvance(status)),
                       ),
                     ),
-                    icon: Icon(
-                      isDelivered
-                          ? Icons.check_circle_outline
-                          : Icons.add_a_photo,
-                    ),
-                    label: Text(
-                      isDelivered
-                          ? 'ส่งสำเร็จแล้ว'
-                          : (status == 2
-                              ? 'อัปเดตเป็นสถานะ [3] แนบรูป'
-                              : 'อัปเดตเป็นสถานะ [4] แนบรูป'),
-                    ),
-                    onPressed: (isDelivered || _working)
-                        ? null
-                        : () => _pickImageAndAdvance(status),
-                  ),
+                  ],
                 ),
               ),
 
@@ -235,9 +372,15 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
     );
   }
 
-  // ---------------- UI Helpers ----------------
+  // ---------------- UI helpers ----------------
 
   Widget _stepper(int activeIndex) {
+    final icons = <IconData>[
+      Icons.directions_bike_rounded,
+      Icons.local_shipping_rounded,
+      Icons.check_circle_rounded,
+    ];
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: List.generate(_steps.length, (i) {
@@ -246,19 +389,32 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 250),
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: on ? Colors.green : Colors.white,
-                border: Border.all(color: on ? Colors.green : Colors.grey, width: 2),
+                border:
+                    Border.all(color: on ? Colors.green : Colors.grey, width: 2),
+                boxShadow: on
+                    ? [
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.25),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        )
+                      ]
+                    : null,
               ),
-              child: Icon(on ? Icons.check : Icons.circle_outlined,
-                  size: 22, color: on ? Colors.white : Colors.grey),
+              child: Icon(
+                icons[i],
+                size: 24,
+                color: on ? Colors.white : Colors.grey,
+              ),
             ),
             const SizedBox(height: 6),
             SizedBox(
-              width: 90,
+              width: 100,
               child: Text(
                 _steps[i],
                 textAlign: TextAlign.center,
@@ -272,6 +428,30 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
           ],
         );
       }),
+    );
+  }
+
+  Widget _riderPickupBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.directions_bike_rounded, size: 48, color: Colors.blue),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'ไรเดอร์กำลังไปรับของจากผู้ส่ง โปรดรอสักครู่…',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
