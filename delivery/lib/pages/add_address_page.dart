@@ -50,19 +50,29 @@ class _AddAddressPageState extends State<AddAddressPage> {
   }
 
   Future<void> _openMapPicker() async {
-    final LatLng initial = _picked ?? const LatLng(13.7563, 100.5018);
-    final LatLng? result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => MapPickerPage(initial: initial)),
-    );
-    if (result != null) {
-      setState(() {
-        _picked = result;
-        _locationCtrl.text =
-            "${result.latitude.toStringAsFixed(6)}, ${result.longitude.toStringAsFixed(6)}";
-      });
-    }
+  final initial = _picked ?? const LatLng(13.7563, 100.5018);
+
+  // ⬇️ รับเป็น MapPickerResult ไม่ใช่ LatLng
+  final result = await Navigator.push<MapPickerResult>(
+    context,
+    MaterialPageRoute(builder: (_) => MapPickerPage(initial: initial)),
+  );
+
+  if (result != null) {
+    setState(() {
+      _picked = result.latlng;
+      _locationCtrl.text =
+          "${_picked!.latitude.toStringAsFixed(6)}, ${_picked!.longitude.toStringAsFixed(6)}";
+
+      // ถ้า MapPicker ส่ง address มาด้วย และช่องรายละเอียดว่างอยู่ — ใส่ให้เลย
+      if ((result.address ?? '').isNotEmpty && _descCtrl.text.trim().isEmpty) {
+        _descCtrl.text = result.address!;
+      }
+    });
   }
+}
+
+
 
   Future<void> _chooseReceiverAddress() async {
     final phone = _phoneCtrl.text.trim();
