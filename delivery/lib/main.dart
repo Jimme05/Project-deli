@@ -2,6 +2,7 @@ import 'package:delivery/pages/add_address_page.dart';
 import 'package:delivery/pages/edit_address_page.dart';
 import 'package:delivery/pages/home_page.dart';
 import 'package:delivery/pages/manage_addresses_page.dart';
+import 'package:delivery/pages/order_detail_page.dart';
 import 'package:delivery/pages/profile_page.dart';
 import 'package:delivery/pages/rider_accepted_orders_page.dart';
 import 'package:delivery/pages/rider_parcel_status_page.dart';
@@ -67,6 +68,7 @@ class DeliveryApp extends StatelessWidget {
         '/edit_address': (_) => const EditAddressPage(),
         '/editaddresss': (_) => const ManageAddressesPage(),
         '/rider_accepted_orders': (_) => const RiderAcceptedOrdersPage(),
+        '/order_detail': (_) => const OrderDetailPage(),
       },
     );
   }
