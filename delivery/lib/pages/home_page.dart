@@ -73,7 +73,7 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
             final query = FirebaseFirestore.instance
                 .collection('orders')
                 .where('Uid_sender', isEqualTo: uid);
-          
+
             return Column(
               children: [
                 // ====== Header ======
@@ -95,8 +95,7 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
                     stream: query.snapshots(),
                     builder: (context, snap) {
                       if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                            child: CircularProgressIndicator());
+                        return const Center(child: CircularProgressIndicator());
                       }
 
                       if (!snap.hasData || snap.data!.docs.isEmpty) {
@@ -108,19 +107,43 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
                         );
                       }
 
+                      // ✅ กรองออเดอร์ที่ยังไม่เสร็จ (Status_order != 4)
                       final docs = snap.data!.docs.where((d) {
-                        if (_q.isEmpty) return true;
                         final m = d.data();
+                        final status = (m['Status_order'] ?? 1) as int;
+                        if (status == 4)
+                          return false; // ซ่อนออเดอร์ที่เสร็จสิ้นแล้ว
+
+                        if (_q.isEmpty) return true;
                         final q = _q.toLowerCase();
-                        return (m['Name'] ?? '').toString().toLowerCase().contains(q) ||
-                               (m['receiver_phone'] ?? '').toString().toLowerCase().contains(q) ||
-                               (m['delivery_address']?['addressText'] ?? '').toString().toLowerCase().contains(q) ||
-                               (m['oid'] ?? d.id).toString().toLowerCase().contains(q);
+                        return (m['Name'] ?? '')
+                                .toString()
+                                .toLowerCase()
+                                .contains(q) ||
+                            (m['receiver_phone'] ?? '')
+                                .toString()
+                                .toLowerCase()
+                                .contains(q) ||
+                            (m['delivery_address']?['addressText'] ?? '')
+                                .toString()
+                                .toLowerCase()
+                                .contains(q) ||
+                            (m['oid'] ?? d.id)
+                                .toString()
+                                .toLowerCase()
+                                .contains(q);
                       }).toList();
 
+                      if (docs.isEmpty) {
+                        return _emptyState(
+                          green,
+                          title: 'ไม่มีออเดอร์ที่ยังไม่เสร็จสิ้น',
+                          subtitle: 'ออเดอร์ที่ส่งแล้วจะถูกซ่อนไว้อัตโนมัติ',
+                        );
+                      }
+
                       return SingleChildScrollView(
-                        padding:
-                            const EdgeInsets.fromLTRB(16, 18, 16, 100),
+                        padding: const EdgeInsets.fromLTRB(16, 18, 16, 100),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -209,17 +232,27 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Image.asset('assets/images/box.png',
-                width: 46, height: 46, fit: BoxFit.contain),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(name,
+          Row(
+            children: [
+              Image.asset(
+                'assets/images/box.png',
+                width: 46,
+                height: 46,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  name,
                   style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700)),
-            ),
-            _statusChip(status),
-          ]),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _statusChip(status),
+            ],
+          ),
           const SizedBox(height: 10),
           _labelValue('วันที่สร้าง', created),
           _labelValue('ที่อยู่จัดส่ง', addr),
@@ -228,8 +261,12 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
               padding: const EdgeInsets.only(top: 8),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(img,
-                    height: 140, width: double.infinity, fit: BoxFit.cover),
+                child: Image.network(
+                  img,
+                  height: 140,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
         ],
@@ -242,14 +279,17 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
       text: TextSpan(
         text: '$label: ',
         style: const TextStyle(
-            color: Colors.black87,
-            fontSize: 14,
-            fontWeight: FontWeight.w600),
+          color: Colors.black87,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
         children: [
           TextSpan(
             text: value,
             style: const TextStyle(
-                color: Colors.black87, fontWeight: FontWeight.w400),
+              color: Colors.black87,
+              fontWeight: FontWeight.w400,
+            ),
           ),
         ],
       ),
@@ -282,11 +322,14 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Text(text,
-          style:
-              const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
     );
   }
 
@@ -300,27 +343,39 @@ class _DeliveryHomePageState extends State<DeliveryHomePage> {
 
   String _two(int n) => n.toString().padLeft(2, '0');
 
-  Widget _emptyState(Color green,
-      {required String title, String? subtitle, VoidCallback? action}) {
+  Widget _emptyState(
+    Color green, {
+    required String title,
+    String? subtitle,
+    VoidCallback? action,
+  }) {
     return Column(
       children: [
         Expanded(
           child: Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text(title,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
                   style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700)),
-              if (subtitle != null) ...[
-                const SizedBox(height: 6),
-                Text(subtitle, textAlign: TextAlign.center),
-              ],
-              if (action != null) ...[
-                const SizedBox(height: 10),
-                ElevatedButton(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 6),
+                  Text(subtitle, textAlign: TextAlign.center),
+                ],
+                if (action != null) ...[
+                  const SizedBox(height: 10),
+                  ElevatedButton(
                     onPressed: action,
-                    child: const Text('ไปหน้าเข้าสู่ระบบ')),
-              ]
-            ]),
+                    child: const Text('ไปหน้าเข้าสู่ระบบ'),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ],

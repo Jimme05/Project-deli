@@ -50,45 +50,44 @@ class _AddAddressPageState extends State<AddAddressPage> {
   }
 
   Future<void> _openMapPicker() async {
-  final initial = _picked ?? const LatLng(13.7563, 100.5018);
+    final initial = _picked ?? const LatLng(13.7563, 100.5018);
 
-  // ⬇️ รับเป็น MapPickerResult ไม่ใช่ LatLng
-  final result = await Navigator.push<MapPickerResult>(
-    context,
-    MaterialPageRoute(builder: (_) => MapPickerPage(initial: initial)),
-  );
+    // ⬇️ รับเป็น MapPickerResult ไม่ใช่ LatLng
+    final result = await Navigator.push<MapPickerResult>(
+      context,
+      MaterialPageRoute(builder: (_) => MapPickerPage(initial: initial)),
+    );
 
-  if (result != null) {
-    setState(() {
-      _picked = result.latlng;
-      _locationCtrl.text =
-          "${_picked!.latitude.toStringAsFixed(6)}, ${_picked!.longitude.toStringAsFixed(6)}";
+    if (result != null) {
+      setState(() {
+        _picked = result.latlng;
+        _locationCtrl.text =
+            "${_picked!.latitude.toStringAsFixed(6)}, ${_picked!.longitude.toStringAsFixed(6)}";
 
-      // ถ้า MapPicker ส่ง address มาด้วย และช่องรายละเอียดว่างอยู่ — ใส่ให้เลย
-      if ((result.address ?? '').isNotEmpty && _descCtrl.text.trim().isEmpty) {
-        _descCtrl.text = result.address!;
-      }
-    });
+        // ถ้า MapPicker ส่ง address มาด้วย และช่องรายละเอียดว่างอยู่ — ใส่ให้เลย
+        if ((result.address ?? '').isNotEmpty &&
+            _descCtrl.text.trim().isEmpty) {
+          _descCtrl.text = result.address!;
+        }
+      });
+    }
   }
-}
-
-
 
   Future<void> _chooseReceiverAddress() async {
     final phone = _phoneCtrl.text.trim();
     if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรอกเบอร์ผู้รับก่อน')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('กรอกเบอร์ผู้รับก่อน')));
       return;
     }
 
     try {
       final receiver = await _receiverService.findReceiverByPhone(phone);
       if (receiver == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ไม่พบข้อมูลของเบอร์ $phone')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ไม่พบข้อมูลของเบอร์ $phone')));
         return;
       }
       if (receiver.addresses.isEmpty) {
@@ -138,9 +137,9 @@ class _AddAddressPageState extends State<AddAddressPage> {
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ดึงที่อยู่ผู้รับไม่สำเร็จ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ดึงที่อยู่ผู้รับไม่สำเร็จ: $e')));
     }
   }
 
@@ -211,15 +210,31 @@ class _AddAddressPageState extends State<AddAddressPage> {
       final oid = await OrderService().createOrder(req);
 
       if (!mounted) return;
+
+      // ✅ แสดงข้อความและกลับไปหน้า Home
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✅ สร้างออเดอร์สำเร็จ (OID: $oid)')),
+        SnackBar(
+          backgroundColor: Colors.green.shade600,
+          content: Text('✅ สร้างออเดอร์สำเร็จ (OID: $oid)'),
+          duration: const Duration(seconds: 2),
+        ),
       );
+
       _clearForm();
+
+      // ✅ กลับหน้า Home หลังแสดง snackbar เล็กน้อย
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home', // 🏠 route ของหน้า Home
+          (route) => false,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('⚠️ เกิดข้อผิดพลาด: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('⚠️ เกิดข้อผิดพลาด: $e')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -236,7 +251,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
     });
   }
 
-  // ----------------- ⬇️ นี่คือเมธอด build ที่ “ต้องมี” ⬇️ -----------------
+  // ----------------- UI -----------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -258,7 +273,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ตัวช่วย
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -331,10 +345,17 @@ class _AddAddressPageState extends State<AddAddressPage> {
                           border: Border.all(color: Colors.grey.shade400),
                         ),
                         child: _selectedImage == null
-                            ? const Icon(Icons.add_a_photo, size: 40, color: Colors.grey)
+                            ? const Icon(
+                                Icons.add_a_photo,
+                                size: 40,
+                                color: Colors.grey,
+                              )
                             : ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.file(_selectedImage!, fit: BoxFit.cover),
+                                child: Image.file(
+                                  _selectedImage!,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                       ),
                     ),
@@ -363,7 +384,10 @@ class _AddAddressPageState extends State<AddAddressPage> {
                         ? const CircularProgressIndicator(color: Colors.white)
                         : const Text(
                             'สำเร็จ',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                   ),
                 ),
@@ -374,7 +398,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
       ),
     );
   }
-  // ----------------- ⬆️ อย่าลืมให้ build() อยู่ “ในคลาส” ⬆️ -----------------
 
   Widget _buildTextField(
     TextEditingController ctrl,

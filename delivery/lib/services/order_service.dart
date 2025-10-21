@@ -24,13 +24,18 @@ class OrderService {
         throw Exception('ไม่พบข้อมูลผู้ใช้');
       }
 
-      final userData = userSnap.data()!;
-      final pickupAddr = {
-        'label': userData['address_label'] ?? 'บ้านผู้ส่ง',
-        'addressText': userData['addressText'] ?? 'ไม่ระบุที่อยู่',
-        'Latitude': userData['latitude'] ?? 0.0,
-        'Longitude': userData['longitude'] ?? 0.0,
-      };
+      final addrSnap = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('addresses')
+          .where('isDefault', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (addrSnap.docs.isEmpty) {
+        throw Exception('ไม่พบบ้าน/จุดรับของผู้ส่ง (โปรดเพิ่มที่อยู่ก่อน)');
+      }
+      final pickupAddr = addrSnap.docs.first.data();
 
       // ถ้าเก็บใน subcollection เช่น users/{uid}/addresses/{main}
       // ให้เปลี่ยนเป็นตัวนี้แทน
@@ -55,8 +60,10 @@ class OrderService {
       String? imgName1;
       final File? f1 = req.status1ImageFile;
       if (f1 != null) {
-        final up = await HttpUploadService()
-            .uploadFile(f1, customName: "order_${orderRef.id}_status1.jpg");
+        final up = await HttpUploadService().uploadFile(
+          f1,
+          customName: "order_${orderRef.id}_status1.jpg",
+        );
         imgUrl1 = up.url;
         imgName1 = up.filename;
       }
