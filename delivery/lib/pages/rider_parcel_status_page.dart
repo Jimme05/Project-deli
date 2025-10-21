@@ -27,8 +27,7 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage>
   int _currentStep = 0;
 
   final List<String> steps = [
-    'รอไรเดอร์รับของ', // 1
-    'กำลังมารับของ', // 2
+    'กำลังไปรับของ', // 1
     'กำลังไปส่ง', // 3
     'ส่งสินค้าแล้ว', // 4
   ];

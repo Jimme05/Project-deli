@@ -196,10 +196,6 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
         text = 'จัดส่งสำเร็จ';
         color = Colors.green;
         break;
-      case 5:
-        text = 'งานเสร็จสิ้น';
-        color = Colors.grey;
-        break;
       default:
         text = 'ไม่ทราบสถานะ';
         color = Colors.black45;
