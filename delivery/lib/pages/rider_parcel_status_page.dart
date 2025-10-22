@@ -11,7 +11,8 @@ import '../services/http_upload_service.dart';
 
 class RiderParcelStatusPage extends StatefulWidget {
   final String orderId;
-  final int currentStatus; // 1=รอไรเดอร์, 2=กำลังมารับ, 3=รับแล้วกำลังไปส่ง, 4=ส่งแล้ว
+  final int
+  currentStatus; // 1=รอไรเดอร์, 2=กำลังมารับ, 3=รับแล้วกำลังไปส่ง, 4=ส่งแล้ว
 
   const RiderParcelStatusPage({
     super.key,
@@ -29,8 +30,6 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
 
   final ImagePicker _picker = ImagePicker();
   bool _working = false;
-
-  // ถ้าแอปคุณมีการแชร์พิกัดแบบ stream จากที่อื่น ให้เอามา cancel ที่นี่เมื่อจบงาน
   StreamSubscription<Position>? _posSub;
 
   final List<String> _steps = ['กำลังมารับของ', 'กำลังไปส่ง', 'ส่งสินค้าแล้ว'];
@@ -42,12 +41,7 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
     return idx;
   }
 
-  int _statusFromStepIndex(int idx) => idx + 2;
-
-  // ---------------- Directions helpers ----------------
-
-  Future<void> _openDirectionsTo(double lat, double lng, {String? label}) async {
-    // ใช้ Google Maps universal link; ถ้ามีแอปจะเปิดแอปอัตโนมัติ
+  Future<void> _openDirectionsTo(double lat, double lng) async {
     final uri = Uri.parse(
       'https://www.google.com/maps/dir/?api=1'
       '&destination=$lat,$lng'
@@ -55,22 +49,21 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('เปิดแอปแผนที่ไม่สำเร็จ')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('เปิดแอปแผนที่ไม่สำเร็จ')));
     }
   }
 
-  /// เป้าหมายตามสถานะ: 2 -> pickup, 3 -> delivery
   Future<void> _navigateByStatus(Map<String, dynamic> m, int status) async {
     if (status == 2) {
       final p = m['pickup_address'] as Map<String, dynamic>?;
       final lat = (p?['Latitude'] as num?)?.toDouble();
       final lng = (p?['Longitude'] as num?)?.toDouble();
       if (lat == null || lng == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่พบพิกัดจุดรับของ')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ไม่พบพิกัดจุดรับของ')));
         return;
       }
       await _openDirectionsTo(lat, lng);
@@ -92,19 +85,18 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
     }
   }
 
-  // ---------------- Status update with photo ----------------
-
   Future<void> _pickImageAndAdvance(int currentStatus) async {
     if (currentStatus >= 4) return;
 
-    final XFile? picked =
-        await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final XFile? picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
     if (picked == null) return;
 
     setState(() => _working = true);
     try {
       final file = File(picked.path);
-
       final up = await HttpUploadService().uploadFile(
         file,
         customName: "order_${widget.orderId}_s${currentStatus + 1}.jpg",
@@ -112,18 +104,19 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
 
       final nextStatus = currentStatus + 1;
       final imgField = nextStatus == 3 ? 'img_status_3' : 'img_status_4';
-      final nameField =
-          nextStatus == 3 ? 'img_status_3_name' : 'img_status_4_name';
+      final nameField = nextStatus == 3
+          ? 'img_status_3_name'
+          : 'img_status_4_name';
 
       await FirebaseFirestore.instance
           .collection('orders')
           .doc(widget.orderId)
           .update({
-        'Status_order': nextStatus,
-        imgField: up.url,
-        nameField: up.filename,
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+            'Status_order': nextStatus,
+            imgField: up.url,
+            nameField: up.filename,
+            'updated_at': FieldValue.serverTimestamp(),
+          });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -143,8 +136,6 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
     }
   }
 
-  // ---------------- Complete job: set rider idle + stop sharing ----------------
-
   Future<void> _completeJob() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -155,10 +146,10 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
           .collection('orders')
           .doc(widget.orderId)
           .update({
-        'Status_order': 4,
-        'job_done': true,
-        'completed_at': FieldValue.serverTimestamp(),
-      });
+            'Status_order': 4,
+            'job_done': true,
+            'completed_at': FieldValue.serverTimestamp(),
+          });
 
       await FirebaseFirestore.instance.collection('riders').doc(uid).set({
         'Status-rider': 'idle',
@@ -168,9 +159,7 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
         'last_update': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      try {
-        await _posSub?.cancel();
-      } catch (_) {}
+      await _posSub?.cancel();
       _posSub = null;
 
       if (!mounted) return;
@@ -183,20 +172,19 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ปิดงานไม่สำเร็จ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ปิดงานไม่สำเร็จ: $e')));
     } finally {
       if (mounted) setState(() => _working = false);
     }
   }
 
-  // ---------------- UI ----------------
-
   @override
   Widget build(BuildContext context) {
-    final docRef =
-        FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+    final docRef = FirebaseFirestore.instance
+        .collection('orders')
+        .doc(widget.orderId);
 
     return Scaffold(
       backgroundColor: kPageGrey,
@@ -217,10 +205,12 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
+
           final m = snap.data!.data() ?? {};
           final status = (m['Status_order'] ?? widget.currentStatus) as int;
           final stepIndex = _stepIndexFromStatus(status);
           final isDelivered = status >= 4;
+          final jobDone = (m['job_done'] ?? false) as bool;
 
           final img1 = (m['img_status_1'] ?? '') as String?;
           final img3 = (m['img_status_3'] ?? '') as String?;
@@ -242,11 +232,12 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                     _infoRow('สถานะปัจจุบัน', _steps[stepIndex]),
                     _infoRow('ผู้รับ', (m['Name'] ?? '-').toString()),
                     _infoRow(
-                        'เบอร์ผู้รับ', (m['receiver_phone'] ?? '-').toString()),
+                      'เบอร์ผู้รับ',
+                      (m['receiver_phone'] ?? '-').toString(),
+                    ),
                     _infoRow(
                       'ที่อยู่ปลายทาง',
-                      (m['delivery_address']?['addressText'] ?? '-')
-                          .toString(),
+                      (m['delivery_address']?['addressText'] ?? '-').toString(),
                     ),
                     _infoRow(
                       'รับงานจากผู้ส่ง',
@@ -254,7 +245,6 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                     ),
                     _infoRow('สร้างเมื่อ', _formatDate(m['created_at'])),
                     const SizedBox(height: 16),
-
                     if ((img1 ?? '').isNotEmpty) ...[
                       const Text('รูปสถานะ [1] (ผู้ส่งแนบ):'),
                       const SizedBox(height: 8),
@@ -273,17 +263,19 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                       _netImage(img4!),
                       const SizedBox(height: 16),
                     ],
-                    if (isDelivered)
+                    if (jobDone)
                       Center(
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.green.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Text(
-                            'งานนี้จัดส่งเสร็จสิ้นแล้ว',
+                            '🎉 งานนี้จัดส่งเสร็จสิ้นแล้ว',
                             style: TextStyle(
                               color: Colors.green,
                               fontWeight: FontWeight.w700,
@@ -294,8 +286,6 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                   ],
                 ),
               ),
-
-              // แถบปุ่มล่าง: นำทาง + อัปเดตสถานะ/จบงาน
               Positioned(
                 left: 16,
                 right: 16,
@@ -303,7 +293,6 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // ปุ่มนำทาง (ซ่อนเมื่อ status >= 4)
                     if (!isDelivered)
                       SizedBox(
                         width: double.infinity,
@@ -311,7 +300,9 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.black87,
-                            side: BorderSide(color: Colors.black.withOpacity(0.4)),
+                            side: BorderSide(
+                              color: Colors.black.withOpacity(0.4),
+                            ),
                             backgroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -332,34 +323,40 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
                       height: 48,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              isDelivered ? Colors.red.shade600 : kGreen,
+                          backgroundColor: jobDone
+                              ? Colors.grey.shade500
+                              : (isDelivered ? Colors.red.shade600 : kGreen),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                         icon: Icon(
-                          isDelivered ? Icons.flag_rounded : Icons.add_a_photo,
+                          jobDone
+                              ? Icons.lock_rounded
+                              : (isDelivered
+                                    ? Icons.flag_rounded
+                                    : Icons.add_a_photo),
                         ),
                         label: Text(
-                          isDelivered
-                              ? 'จบงาน และกลับไปว่าง'
-                              : (status == 2
-                                  ? 'อัปเดตเป็นสถานะ [3] แนบรูป'
-                                  : 'อัปเดตเป็นสถานะ [4] แนบรูป'),
+                          jobDone
+                              ? 'งานนี้เสร็จสิ้นแล้ว (กดไม่ได้)'
+                              : (isDelivered
+                                    ? 'จบงาน และกลับไปว่าง'
+                                    : (status == 2
+                                          ? 'อัปเดตเป็นสถานะ [3] แนบรูป'
+                                          : 'อัปเดตเป็นสถานะ [4] แนบรูป')),
                         ),
-                        onPressed: _working
+                        onPressed: _working || jobDone
                             ? null
                             : (isDelivered
-                                ? _completeJob
-                                : () => _pickImageAndAdvance(status)),
+                                  ? _completeJob
+                                  : () => _pickImageAndAdvance(status)),
                       ),
                     ),
                   ],
                 ),
               ),
-
               if (_working)
                 Container(
                   color: Colors.black.withOpacity(0.15),
@@ -371,8 +368,6 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
       ),
     );
   }
-
-  // ---------------- UI helpers ----------------
 
   Widget _stepper(int activeIndex) {
     final icons = <IconData>[
@@ -394,17 +389,10 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: on ? Colors.green : Colors.white,
-                border:
-                    Border.all(color: on ? Colors.green : Colors.grey, width: 2),
-                boxShadow: on
-                    ? [
-                        BoxShadow(
-                          color: Colors.green.withOpacity(0.25),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        )
-                      ]
-                    : null,
+                border: Border.all(
+                  color: on ? Colors.green : Colors.grey,
+                  width: 2,
+                ),
               ),
               child: Icon(
                 icons[i],
@@ -442,7 +430,11 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.directions_bike_rounded, size: 48, color: Colors.blue),
+          const Icon(
+            Icons.directions_bike_rounded,
+            size: 48,
+            color: Colors.blue,
+          ),
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
@@ -462,12 +454,17 @@ class _RiderParcelStatusPageState extends State<RiderParcelStatusPage> {
         text: TextSpan(
           text: '$k: ',
           style: const TextStyle(
-              color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 14),
+            color: Colors.black87,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
           children: [
             TextSpan(
               text: v,
               style: const TextStyle(
-                  color: Colors.black87, fontWeight: FontWeight.w400),
+                color: Colors.black87,
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ],
         ),

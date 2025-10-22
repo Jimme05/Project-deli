@@ -16,7 +16,6 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
       return const Scaffold(body: Center(child: Text('กรุณาเข้าสู่ระบบก่อน')));
     }
 
-    // แนะนำให้สร้าง index เมื่อใช้ where + orderBy (ดู console ถ้ามี error ลิงก์ index)
     final ordersStream = FirebaseFirestore.instance
         .collection('orders')
         .where('assignedRiderId', isEqualTo: uid)
@@ -29,7 +28,11 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
         elevation: 0,
         title: const Text(
           'ออเดอร์ที่รับไว้แล้ว',
-          style: TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
@@ -46,11 +49,13 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
             return const Center(
-              child: Text('ยังไม่มีออเดอร์ที่คุณรับไว้', style: TextStyle(fontSize: 15, color: Colors.black54)),
+              child: Text(
+                'ยังไม่มีออเดอร์ที่คุณรับไว้',
+                style: TextStyle(fontSize: 15, color: Colors.black54),
+              ),
             );
           }
 
-          // แยกงานที่ยังไม่เสร็จ (status != 4) และงานที่จบแล้ว (status == 4)
           final unfinished = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
           final finished = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
@@ -63,7 +68,6 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
             }
           }
 
-          // ให้ "ยังไม่เสร็จ" อยู่บน, "เสร็จแล้ว" อยู่ล่าง
           final ordered = [...unfinished, ...finished];
 
           return ListView.builder(
@@ -76,7 +80,8 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
 
               final receiver = (m['Name'] ?? '-').toString();
               final phone = (m['receiver_phone'] ?? '-').toString();
-              final address = (m['delivery_address']?['addressText'] ?? '-').toString();
+              final address = (m['delivery_address']?['addressText'] ?? '-')
+                  .toString();
               final status = (m['Status_order'] ?? 1) as int;
               final created = _formatDate(m['created_at']);
 
@@ -99,8 +104,13 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('📦 Order ID: $oid',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                    Text(
+                      '📦 Order ID: $oid',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Text('ผู้รับ: $receiver'),
                     Text('เบอร์: $phone'),
@@ -110,34 +120,42 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
                     _statusChip(status),
                     const SizedBox(height: 12),
 
-                    // ปุ่มอัปเดตสถานะ (งานจบแล้วปิดปุ่ม)
+                    // ✅ ปุ่มดูหรืออัปเดตสถานะ (กดได้เสมอ)
                     SizedBox(
                       width: double.infinity,
                       height: 44,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isFinished ? Colors.grey : kGreen,
+                          backgroundColor: isFinished
+                              ? Colors.grey.shade500
+                              : kGreen,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
                         ),
-                        icon: Icon(isFinished ? Icons.check_circle_outline : Icons.local_shipping_rounded),
+                        icon: Icon(
+                          isFinished
+                              ? Icons.visibility_rounded
+                              : Icons.local_shipping_rounded,
+                        ),
                         label: Text(
-                          isFinished ? 'งานนี้เสร็จสิ้นแล้ว' : 'อัปเดตสถานะออเดอร์',
+                          isFinished
+                              ? 'ดูรายละเอียดออเดอร์'
+                              : 'อัปเดตสถานะออเดอร์',
                           style: const TextStyle(fontSize: 15),
                         ),
-                        onPressed: isFinished
-                            ? null
-                            : () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => RiderParcelStatusPage(
-                                      orderId: oid,
-                                      currentStatus: status,
-                                    ),
-                                  ),
-                                );
-                              },
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RiderParcelStatusPage(
+                                orderId: oid,
+                                currentStatus: status,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -177,8 +195,18 @@ class RiderAcceptedOrdersPage extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
-      child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
+      ),
     );
   }
 
