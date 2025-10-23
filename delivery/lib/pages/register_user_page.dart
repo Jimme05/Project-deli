@@ -11,7 +11,6 @@ import 'package:http/http.dart' as http;
 import '../main.dart';
 import '../models/address.dart';
 import '../models/auth_request.dart';
-import '../services/firebase_auth_service.dart';
 
 class RegisterUserTab extends StatefulWidget {
   const RegisterUserTab({super.key});
@@ -53,7 +52,7 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
     if (x != null) setState(() => _img = File(x.path));
   }
 
-  /// ✅ ค้นหาสถานที่
+  /// ✅ ค้นหาสถานที่ (Search)
   Future<void> _searchPlace() async {
     final query = _search.text.trim();
     if (query.isEmpty) return;
@@ -67,12 +66,14 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
         url,
         headers: {'User-Agent': 'FlutterMapApp/1.0 (contact@example.com)'},
       );
+
       if (res.statusCode == 200) {
         final List data = jsonDecode(res.body);
         if (data.isNotEmpty) {
           final lat = double.parse(data[0]['lat']);
           final lon = double.parse(data[0]['lon']);
           final displayName = data[0]['display_name'] as String;
+
           setState(() {
             _selectedPoint = LatLng(lat, lon);
             _addressText = displayName;
@@ -95,7 +96,39 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
     }
   }
 
-  /// ✅ ตรวจสอบซ้ำ (เช็กจาก Firestore ทั้งอีเมลและเบอร์)
+  /// ✅ Reverse Geocoding - แปลงพิกัดเป็นชื่อสถานที่
+  Future<void> _getAddressFromLatLng(LatLng point) async {
+    final url = Uri.parse(
+      'https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.latitude}&lon=${point.longitude}&zoom=18&addressdetails=1',
+    );
+
+    try {
+      final res = await http.get(
+        url,
+        headers: {'User-Agent': 'FlutterMapApp/1.0 (contact@example.com)'},
+      );
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final displayName = data['display_name'] ?? "ไม่พบชื่อสถานที่";
+        setState(() {
+          _addressText = displayName;
+        });
+      } else {
+        setState(() {
+          _addressText =
+              'ตำแหน่ง (${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)})';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _addressText =
+            'ตำแหน่ง (${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)})';
+      });
+    }
+  }
+
+  /// ✅ ตรวจสอบอีเมล/เบอร์ซ้ำ
   Future<bool> _isDuplicate(String email, String phone) async {
     final userRef = FirebaseFirestore.instance.collection('users');
     final checkEmail = await userRef
@@ -123,8 +156,9 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
     try {
       final email = _email.text.trim();
       final phone = _phone.text.trim();
+      final pass = _pass.text.trim();
+      final name = _name.text.trim();
 
-      // ✅ ตรวจสอบซ้ำใน Firestore
       if (await _isDuplicate(email, phone)) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -133,38 +167,37 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
         return;
       }
 
-      // ✅ เตรียมข้อมูลสมัครผู้ใช้
-      final req = UserSignUpRequest(
-        phone: phone,
-        password: _pass.text.trim(),
-        name: _name.text.trim(),
-        primaryAddress: Address(
-          id: '',
-          label: "บ้าน",
-          addressText: _addressText ?? 'ไม่ทราบที่อยู่',
-          latitude: _selectedPoint!.latitude,
-          longitude: _selectedPoint!.longitude,
-        ),
-        profileFile: _img,
-      );
+      // ✅ สมัครผู้ใช้ใหม่กับ FirebaseAuth
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(email: email, password: pass);
+      final user = credential.user;
+      if (user == null) throw Exception('สร้างผู้ใช้ไม่สำเร็จ');
 
-      // ✅ สมัครผู้ใช้ใน Firebase
-      final auth = FirebaseAuthService();
-      final res = await auth.signUpUserWithEmail(email: email, req: req);
+      // ✅ บันทึกข้อมูลใน Firestore
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'email': email,
+        'phone': phone,
+        'name': name,
+        'role': 'user', // 👈 สำคัญ! ให้เป็น user ไม่ใช่ rider
+        'address': {
+          'label': 'บ้าน',
+          'addressText': _addressText ?? 'ไม่ทราบที่อยู่',
+          'latitude': _selectedPoint!.latitude,
+          'longitude': _selectedPoint!.longitude,
+        },
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-      if (!mounted) return;
       setState(() => _loading = false);
+      if (!mounted) return;
 
-      if (res.success) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('✅ สมัคร User สำเร็จ')));
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(res.message ?? 'สมัครไม่สำเร็จ')),
-        );
-      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('✅ สมัคร User สำเร็จ')));
+
+      // ✅ หลังสมัครเสร็จ กลับหน้า Login หรือ User Home
+      Navigator.pushReplacementNamed(context, '/login');
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -282,7 +315,7 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
             ),
             const SizedBox(height: 10),
 
-            // แผนที่
+            // 🗺️ แผนที่
             Container(
               height: 260,
               decoration: BoxDecoration(
@@ -294,12 +327,9 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
                 options: MapOptions(
                   initialCenter: const LatLng(13.7563, 100.5018),
                   initialZoom: 12,
-                  onTap: (tapPos, point) {
-                    setState(() {
-                      _selectedPoint = point;
-                      _addressText =
-                          'ละติจูด ${point.latitude.toStringAsFixed(6)}, ลองจิจูด ${point.longitude.toStringAsFixed(6)}';
-                    });
+                  onTap: (tapPos, point) async {
+                    setState(() => _selectedPoint = point);
+                    await _getAddressFromLatLng(point);
                   },
                 ),
                 children: [
