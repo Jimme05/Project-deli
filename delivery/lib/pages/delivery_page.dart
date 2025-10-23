@@ -92,7 +92,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
               ),
             ),
 
-            // ======= ปุ่มสถานะ =======
+            // ======= ปุ่มสถานะ + ปุ่มดูแมพรวม =======
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -119,7 +119,6 @@ class _DeliveryPageState extends State<DeliveryPage> {
                     icon: const Icon(Icons.map_rounded),
                     tooltip: 'ดูแมพรวมทุกออเดอร์',
                     onPressed: () {
-                      // ส่ง mode ตามแท็บที่เลือก
                       final mode = _selectedTab == 1 ? 'receiver' : 'sender';
                       Navigator.pushNamed(
                         context,
@@ -223,7 +222,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
     );
   }
 
-  /// การ์ดพัสดุ + ปุ่ม “ดูแมพผู้ส่ง/ผู้รับ”
+  /// การ์ดพัสดุ + ปุ่ม “ดูแมพ” (แปรตามแท็บ) + ปุ่ม “ดูรายละเอียด”
   Widget _parcelCard(Map<String, dynamic> data, String id) {
     final name = data['Name'] ?? '-';
     final phone = data['receiver_phone'] ?? '-';
@@ -293,29 +292,19 @@ class _DeliveryPageState extends State<DeliveryPage> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(
-                "📞 เบอร์ผู้รับ: $phone",
-                style: const TextStyle(fontSize: 13),
-              ),
-              Text(
-                "📦 วันที่สร้าง: $createdAt",
-                style: const TextStyle(fontSize: 13, color: Colors.black54),
-              ),
-              Text(
-                "🚚 จุดรับของผู้ส่ง: $pickupText",
-                style: const TextStyle(fontSize: 13, color: Colors.black54),
-              ),
-              Text(
-                "🏠 ที่อยู่จัดส่ง: $addr",
-                style: const TextStyle(fontSize: 13, color: Colors.black54),
-              ),
+              Text("📞 เบอร์ผู้รับ: $phone", style: const TextStyle(fontSize: 13)),
+              Text("📦 วันที่สร้าง: $createdAt",
+                  style: const TextStyle(fontSize: 13, color: Colors.black54)),
+              Text("🚚 จุดรับของผู้ส่ง: $pickupText",
+                  style: const TextStyle(fontSize: 13, color: Colors.black54)),
+              Text("🏠 ที่อยู่จัดส่ง: $addr",
+                  style: const TextStyle(fontSize: 13, color: Colors.black54)),
 
               if (desc.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(
-                  "📝 หมายเหตุ: $desc",
-                  style: const TextStyle(fontSize: 13, color: Colors.black87),
-                ),
+                Text("📝 หมายเหตุ: $desc",
+                    style:
+                        const TextStyle(fontSize: 13, color: Colors.black87)),
               ],
               if (img.toString().isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -331,30 +320,48 @@ class _DeliveryPageState extends State<DeliveryPage> {
               ],
 
               const SizedBox(height: 10),
-              // 🔰 ปุ่มดูแมพ “ผู้ส่ง” และ “ผู้รับ”
-              // 🔰 ปุ่มดูแมพแปรผันตามแท็บ (_selectedTab)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: Icon(
-                    _selectedTab == 0
-                        ? Icons.store_mall_directory_rounded
-                        : Icons.location_on_rounded,
-                  ),
-                  label: Text(
-                    _selectedTab == 0 ? 'ดูแมพผู้ส่ง' : 'ดูแมพผู้รับ',
-                  ),
-                  onPressed: () {
-                    Navigator.pushNamed(
-                      context,
-                      '/order_map',
-                      arguments: {
-                        'oid': id,
-                        'focus': _selectedTab == 0 ? 'pickup' : 'delivery',
+
+              // ปุ่ม: ดูแมพ (แปรตามแท็บ) + ดูรายละเอียด
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: Icon(
+                        _selectedTab == 0
+                            ? Icons.store_mall_directory_rounded
+                            : Icons.location_on_rounded,
+                      ),
+                      label: Text(
+                        _selectedTab == 0 ? 'ดูแมพผู้ส่ง' : 'ดูแมพผู้รับ',
+                      ),
+                      onPressed: () {
+                        Navigator.pushNamed(
+                          context,
+                          '/order_map',
+                          arguments: {
+                            'oid': id,
+                            'focus': _selectedTab == 0 ? 'pickup' : 'delivery',
+                          },
+                        );
                       },
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.receipt_long_rounded),
+                      label: const Text('ดูรายละเอียด'),
+                      onPressed: () {
+                        // ส่ง oid แบบ String (ให้ตรงกับ OrderDetailPage ปัจจุบัน)
+                        Navigator.pushNamed(
+                          context,
+                          '/order_detail',
+                          arguments: id,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
