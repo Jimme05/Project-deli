@@ -9,7 +9,6 @@ import '../models/address.dart';
 import '../models/order_create_request.dart';
 import '../services/address_service.dart';
 import '../services/order_service.dart';
-import '../services/receiver_service.dart';
 import 'map_picker_page.dart';
 
 class AddAddressPage extends StatefulWidget {
@@ -33,7 +32,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
   bool _loading = false;
 
   final _addressService = AddressService();
-  final _receiverService = ReceiverService();
 
   @override
   void dispose() {
@@ -51,8 +49,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
 
   Future<void> _openMapPicker() async {
     final initial = _picked ?? const LatLng(13.7563, 100.5018);
-
-    // ⬇️ รับเป็น MapPickerResult ไม่ใช่ LatLng
     final result = await Navigator.push<MapPickerResult>(
       context,
       MaterialPageRoute(builder: (_) => MapPickerPage(initial: initial)),
@@ -63,8 +59,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
         _picked = result.latlng;
         _locationCtrl.text =
             "${_picked!.latitude.toStringAsFixed(6)}, ${_picked!.longitude.toStringAsFixed(6)}";
-
-        // ถ้า MapPicker ส่ง address มาด้วย และช่องรายละเอียดว่างอยู่ — ใส่ให้เลย
         if ((result.address ?? '').isNotEmpty &&
             _descCtrl.text.trim().isEmpty) {
           _descCtrl.text = result.address!;
@@ -73,185 +67,181 @@ class _AddAddressPageState extends State<AddAddressPage> {
     }
   }
 
-  Future<void> _chooseReceiverAddress() async {
-    final phone = _phoneCtrl.text.trim();
-    if (phone.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('กรอกเบอร์ผู้รับก่อน')));
-      return;
-    }
-
+  // ✅ เลือกรายชื่อผู้รับ → ดึงที่อยู่ทั้งหมดของคนนั้นมาด้วย
+  Future<void> _chooseReceiverFromUsers() async {
     try {
-      final receiver = await _receiverService.findReceiverByPhone(phone);
-      if (receiver == null) {
+      final currentUser = fa.FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('ไม่พบข้อมูลของเบอร์ $phone')));
+        ).showSnackBar(const SnackBar(content: Text('ยังไม่ได้เข้าสู่ระบบ')));
         return;
       }
-      if (receiver.addresses.isEmpty) {
+
+      // ดึงเฉพาะ users ที่ role == 'user' และไม่ใช่ตัวเอง
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'user')
+          .get();
+
+      final filteredDocs = snapshot.docs
+          .where((doc) => doc.id != currentUser.uid)
+          .toList();
+
+      if (filteredDocs.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ผู้รับยังไม่มีที่อยู่บันทึกไว้')),
+          const SnackBar(content: Text('ไม่มีผู้ใช้ User คนอื่นในระบบ')),
         );
         return;
       }
 
-      final chosen = await showModalBottomSheet<Address>(
+      // ⬇️ BottomSheet เลือกชื่อผู้รับ
+      final chosenUser = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) {
+          return SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'เลือกรายชื่อผู้รับ (เฉพาะ User)',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ),
+                const Divider(),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: filteredDocs.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final data = filteredDocs[i].data();
+                      final name = data['name'] ?? '-';
+                      final phone = data['phone'] ?? '-';
+                      final img = data['photoUrl'] ?? data['profileUrl'];
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundImage: img != null
+                              ? NetworkImage(img)
+                              : null,
+                          child: img == null
+                              ? const Icon(Icons.person, color: Colors.white)
+                              : null,
+                          backgroundColor: Colors.grey.shade400,
+                        ),
+                        title: Text(name),
+                        subtitle: Text('เบอร์: $phone'),
+                        onTap: () => Navigator.pop(context, {
+                          'uid': filteredDocs[i].id,
+                          'name': name,
+                          'phone': phone,
+                        }),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (chosenUser == null) return;
+
+      // ✅ ดึงที่อยู่ทั้งหมดของ user ที่เลือก
+      final addressSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(chosenUser['uid'])
+          .collection('addresses')
+          .get();
+
+      if (addressSnap.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ผู้ใช้ ${chosenUser['name']} ยังไม่มีที่อยู่'),
+          ),
+        );
+        return;
+      }
+
+      // ⬇️ BottomSheet เลือกที่อยู่
+      final chosenAddress = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        builder: (_) => ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemCount: receiver.addresses.length,
-          itemBuilder: (_, i) {
-            final a = receiver.addresses[i];
-            return ListTile(
-              leading: Icon(
-                a.isDefault ? Icons.star_rounded : Icons.place_rounded,
-                color: a.isDefault ? Colors.amber : Colors.black54,
-              ),
-              title: Text(a.label),
-              subtitle: Text(a.addressText),
-              trailing: Text(
-                '${a.latitude.toStringAsFixed(5)}, ${a.longitude.toStringAsFixed(5)}',
-                style: const TextStyle(color: Colors.black54),
-              ),
-              onTap: () => Navigator.pop(context, a),
-            );
-          },
-        ),
+        builder: (_) {
+          return SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'เลือกที่อยู่ผู้รับ',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ),
+                const Divider(),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: addressSnap.docs.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final a = addressSnap.docs[i].data();
+                      return ListTile(
+                        leading: const Icon(
+                          Icons.location_on,
+                          color: Colors.teal,
+                        ),
+                        title: Text(a['label'] ?? 'ที่อยู่'),
+                        subtitle: Text(a['addressText'] ?? '-'),
+                        trailing: Text(
+                          '${(a['Latitude'] as num).toStringAsFixed(5)}, ${(a['Longitude'] as num).toStringAsFixed(5)}',
+                          style: const TextStyle(
+                            color: Colors.black54,
+                            fontSize: 12,
+                          ),
+                        ),
+                        onTap: () => Navigator.pop(context, a),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       );
 
-      if (chosen != null) {
-        setState(() {
-          _picked = LatLng(chosen.latitude, chosen.longitude);
-          _locationCtrl.text =
-              "${chosen.latitude.toStringAsFixed(6)}, ${chosen.longitude.toStringAsFixed(6)}";
-          _descCtrl.text = chosen.addressText;
-          if (_nameCtrl.text.isEmpty && receiver.name.isNotEmpty) {
-            _nameCtrl.text = receiver.name;
-          }
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('ดึงที่อยู่ผู้รับไม่สำเร็จ: $e')));
-    }
-  }
+      if (chosenAddress == null) return;
 
-  Future<void> _submit() async {
-    if (_nameCtrl.text.trim().isEmpty ||
-        _phoneCtrl.text.trim().isEmpty ||
-        _picked == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรอกชื่อ/เบอร์/เลือกพิกัดให้ครบ')),
-      );
-      return;
-    }
-
-    setState(() => _loading = true);
-    try {
-      final u = fa.FirebaseAuth.instance.currentUser;
-      if (u == null) throw Exception("ยังไม่ได้ล็อกอิน");
-
-      // pickup: default address ของผู้ส่ง
-      final addrSnap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(u.uid)
-          .collection('addresses')
-          .where('isDefault', isEqualTo: true)
-          .limit(1)
-          .get();
-      if (addrSnap.docs.isEmpty) {
-        throw Exception("ไม่พบบ้าน/จุดรับของผู้ส่ง (โปรดเพิ่มที่อยู่หลักก่อน)");
-      }
-      final a = addrSnap.docs.first.data();
-      final pickup = Address(
-        id: addrSnap.docs.first.id,
-        label: a['label'] ?? 'บ้าน',
-        addressText: a['addressText'] ?? '',
-        latitude: (a['Latitude'] as num).toDouble(),
-        longitude: (a['Longitude'] as num).toDouble(),
-      );
-
-      // delivery: จากฟอร์ม/ที่เลือก
-      final delivery = Address(
-        id: '',
-        label: "ปลายทาง",
-        addressText: _descCtrl.text.trim(),
-        latitude: _picked!.latitude,
-        longitude: _picked!.longitude,
-      );
-
-      // หา UID ผู้รับจากเบอร์
-      final phone = _phoneCtrl.text.trim();
-      final q = await FirebaseFirestore.instance
-          .collection('users')
-          .where('phone', isEqualTo: phone)
-          .limit(1)
-          .get();
-      final receiverUid = q.docs.isNotEmpty ? q.docs.first.id : "";
-
-      final req = OrderCreateRequest(
-        senderUid: u.uid,
-        receiverUid: receiverUid,
-        receiverPhone: phone,
-        receiverName: _nameCtrl.text.trim(),
-        pickupAddress: pickup,
-        deliveryAddress: delivery,
-        description: _descCtrl.text.trim(),
-        status1ImageFile: _selectedImage,
-      );
-
-      final oid = await OrderService().createOrder(req);
-
-      if (!mounted) return;
-
-      // ✅ แสดงข้อความและกลับไปหน้า Home
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.green.shade600,
-          content: Text('✅ สร้างออเดอร์สำเร็จ (OID: $oid)'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
-      _clearForm();
-
-      // ✅ กลับหน้า Home หลังแสดง snackbar เล็กน้อย
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/home', // 🏠 route ของหน้า Home
-          (route) => false,
+      // ✅ กรอกข้อมูลอัตโนมัติ
+      setState(() {
+        _nameCtrl.text = chosenUser['name'];
+        _phoneCtrl.text = chosenUser['phone'];
+        _descCtrl.text = chosenAddress['addressText'] ?? '';
+        _picked = LatLng(
+          (chosenAddress['Latitude'] as num).toDouble(),
+          (chosenAddress['Longitude'] as num).toDouble(),
         );
-      }
+        _locationCtrl.text =
+            "${_picked!.latitude.toStringAsFixed(6)}, ${_picked!.longitude.toStringAsFixed(6)}";
+      });
     } catch (e) {
-      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('⚠️ เกิดข้อผิดพลาด: $e')));
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
     }
   }
 
-  void _clearForm() {
-    _nameCtrl.clear();
-    _phoneCtrl.clear();
-    _locationCtrl.clear();
-    _descCtrl.clear();
-    setState(() {
-      _selectedImage = null;
-      _picked = null;
-    });
-  }
-
-  // ----------------- UI -----------------
+  // ---------------- UI -----------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -307,8 +297,8 @@ class _AddAddressPageState extends State<AddAddressPage> {
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton(
-                    onPressed: _chooseReceiverAddress,
-                    child: const Text('ใช้ที่อยู่ผู้รับจากเบอร์'),
+                    onPressed: _chooseReceiverFromUsers,
+                    child: const Text('เลือกรายชื่อผู้รับ'),
                   ),
                 ],
               ),
@@ -397,6 +387,91 @@ class _AddAddressPageState extends State<AddAddressPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _submit() async {
+    if (_nameCtrl.text.trim().isEmpty ||
+        _phoneCtrl.text.trim().isEmpty ||
+        _picked == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรอกชื่อ/เบอร์/เลือกพิกัดให้ครบ')),
+      );
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final u = fa.FirebaseAuth.instance.currentUser;
+      if (u == null) throw Exception("ยังไม่ได้ล็อกอิน");
+
+      final addrSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(u.uid)
+          .collection('addresses')
+          .where('isDefault', isEqualTo: true)
+          .limit(1)
+          .get();
+      if (addrSnap.docs.isEmpty) {
+        throw Exception("ไม่พบบ้าน/จุดรับของผู้ส่ง (โปรดเพิ่มที่อยู่หลักก่อน)");
+      }
+
+      final a = addrSnap.docs.first.data();
+      final pickup = Address(
+        id: addrSnap.docs.first.id,
+        label: a['label'] ?? 'บ้าน',
+        addressText: a['addressText'] ?? '',
+        latitude: (a['Latitude'] as num).toDouble(),
+        longitude: (a['Longitude'] as num).toDouble(),
+      );
+
+      final delivery = Address(
+        id: '',
+        label: "ปลายทาง",
+        addressText: _descCtrl.text.trim(),
+        latitude: _picked!.latitude,
+        longitude: _picked!.longitude,
+      );
+
+      final phone = _phoneCtrl.text.trim();
+      final q = await FirebaseFirestore.instance
+          .collection('users')
+          .where('phone', isEqualTo: phone)
+          .limit(1)
+          .get();
+      final receiverUid = q.docs.isNotEmpty ? q.docs.first.id : "";
+
+      final req = OrderCreateRequest(
+        senderUid: u.uid,
+        receiverUid: receiverUid,
+        receiverPhone: phone,
+        receiverName: _nameCtrl.text.trim(),
+        pickupAddress: pickup,
+        deliveryAddress: delivery,
+        description: _descCtrl.text.trim(),
+        status1ImageFile: _selectedImage,
+      );
+
+      final oid = await OrderService().createOrder(req);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.green.shade600,
+          content: Text('✅ สร้างออเดอร์สำเร็จ (OID: $oid)'),
+        ),
+      );
+
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('⚠️ เกิดข้อผิดพลาด: $e')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Widget _buildTextField(
