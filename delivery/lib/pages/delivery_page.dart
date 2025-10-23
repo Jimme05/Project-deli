@@ -115,6 +115,19 @@ class _DeliveryPageState extends State<DeliveryPage> {
                       ),
                     ),
                   ),
+                  IconButton(
+                    icon: const Icon(Icons.map_rounded),
+                    tooltip: 'ดูแมพรวมทุกออเดอร์',
+                    onPressed: () {
+                      // ส่ง mode ตามแท็บที่เลือก
+                      final mode = _selectedTab == 1 ? 'receiver' : 'sender';
+                      Navigator.pushNamed(
+                        context,
+                        '/orders_map_all',
+                        arguments: {'mode': mode},
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -167,7 +180,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
               return _selectedStatus == 0 ? (s >= 1 && s <= 3) : (s == 4);
             });
 
-        // ฟิลเตอร์ค้นหา (OID/ชื่อ/เบอร์)
+        // ฟิลเตอร์ค้นหา
         final q = _query.toLowerCase();
         if (q.isNotEmpty) {
           list = list.where((doc) {
@@ -179,7 +192,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
           });
         }
 
-        // จัดเรียงเวลาใหม่ก่อน (ถ้า created_at เป็น null ให้ไปท้าย)
+        // sort ตามเวลาสร้าง
         final docs = list.toList()
           ..sort((a, b) {
             final ta = a.data()['created_at'];
@@ -203,19 +216,14 @@ class _DeliveryPageState extends State<DeliveryPage> {
           itemBuilder: (context, i) {
             final data = docs[i].data();
             final id = docs[i].id;
-            return InkWell(
-              onTap: () {
-                Navigator.pushNamed(context, '/order_detail', arguments: id);
-              },
-              child: _parcelCard(data, id),
-            );
+            return _parcelCard(data, id);
           },
         );
       },
     );
   }
 
-  /// การ์ดพัสดุ (จุดรับดึงจากผู้ส่ง)
+  /// การ์ดพัสดุ + ปุ่ม “ดูแมพผู้ส่ง/ผู้รับ”
   Widget _parcelCard(Map<String, dynamic> data, String id) {
     final name = data['Name'] ?? '-';
     final phone = data['receiver_phone'] ?? '-';
@@ -227,7 +235,6 @@ class _DeliveryPageState extends State<DeliveryPage> {
     final createdAt = _formatDate(data['created_at']);
     final senderUid = data['Uid_sender'] ?? data['senderUid'];
 
-    // ✅ ดึงที่อยู่ของผู้ส่งจาก Firestore
     return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
       future: FirebaseFirestore.instance
           .collection('users')
@@ -302,6 +309,7 @@ class _DeliveryPageState extends State<DeliveryPage> {
                 "🏠 ที่อยู่จัดส่ง: $addr",
                 style: const TextStyle(fontSize: 13, color: Colors.black54),
               ),
+
               if (desc.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -321,6 +329,33 @@ class _DeliveryPageState extends State<DeliveryPage> {
                   ),
                 ),
               ],
+
+              const SizedBox(height: 10),
+              // 🔰 ปุ่มดูแมพ “ผู้ส่ง” และ “ผู้รับ”
+              // 🔰 ปุ่มดูแมพแปรผันตามแท็บ (_selectedTab)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: Icon(
+                    _selectedTab == 0
+                        ? Icons.store_mall_directory_rounded
+                        : Icons.location_on_rounded,
+                  ),
+                  label: Text(
+                    _selectedTab == 0 ? 'ดูแมพผู้ส่ง' : 'ดูแมพผู้รับ',
+                  ),
+                  onPressed: () {
+                    Navigator.pushNamed(
+                      context,
+                      '/order_map',
+                      arguments: {
+                        'oid': id,
+                        'focus': _selectedTab == 0 ? 'pickup' : 'delivery',
+                      },
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         );

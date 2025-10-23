@@ -30,13 +30,18 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_map:
-  latlong2: 
+  flutter_map: ^7.0.0
+  firebase_auth:
+  latlong2: ^0.9.1 
   geolocator: 
   firebase_core: 
   firebase_database: 
   http:          # ถ้าจะเรียก Nominatim/OSRM
   url_launcher:
+  firebase_storage:
+  google_maps_flutter:
+  geocoding:
+  image_picker:
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -47,11 +52,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  firebase_auth:
-  firebase_storage:
-  google_maps_flutter:
-  geocoding:
-  image_picker:
+ 
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

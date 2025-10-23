@@ -3,10 +3,12 @@ import 'package:delivery/pages/edit_address_page.dart';
 import 'package:delivery/pages/home_page.dart';
 import 'package:delivery/pages/manage_addresses_page.dart';
 import 'package:delivery/pages/order_detail_page.dart';
+import 'package:delivery/pages/order_map_page.dart';
 import 'package:delivery/pages/profile_page.dart';
 import 'package:delivery/pages/rider_accepted_orders_page.dart';
 import 'package:delivery/pages/rider_parcel_status_page.dart';
 import 'package:delivery/pages/rider_profile_page.dart';
+import 'package:delivery/pages/user_all_orders_map_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -69,6 +71,8 @@ class DeliveryApp extends StatelessWidget {
         '/editaddresss': (_) => const ManageAddressesPage(),
         '/rider_accepted_orders': (_) => const RiderAcceptedOrdersPage(),
         '/order_detail': (_) => const OrderDetailPage(),
+        '/order_map': (context) => const OrderMapPage(),
+         '/orders_map_all': (context) => const UserAllOrdersMapPage(),
       },
     );
   }
