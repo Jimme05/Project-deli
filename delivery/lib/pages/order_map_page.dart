@@ -131,14 +131,14 @@ class _OrderMapPageState extends State<OrderMapPage> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          _focus == 'pickup' ? 'กำลังดู: จุดรับสินค้า (ผู้ส่ง)' : 'กำลังดู: ที่อยู่ผู้รับ',
+                          _focus == 'pickup' ? 'ฉันคือ: จุดรับสินค้า (ผู้ส่ง)' : 'ฉันคือ: ที่อยู่ผู้รับ',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
                       TextButton.icon(
                         onPressed: _swapFocus,
-                        icon: const Icon(Icons.swap_horiz),
-                        label: const Text('สลับ'),
+                       
+                        label: const Text('ดู'),
                       )
                     ],
                   ),
@@ -242,8 +242,8 @@ class _OrderMapPageState extends State<OrderMapPage> {
 
   Marker _pin(LatLng p, Color c, String label) => Marker(
         point: p,
-        width: 50,
-        height: 50,
+        width: 70,
+        height: 70,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

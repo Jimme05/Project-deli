@@ -1,7 +1,10 @@
+import 'package:delivery/services/firebase_auth_service.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../widgets/app_logo.dart';
-import '../models/auth_response.dart';
-import '../services/firebase_auth_service.dart'; // 👈 ใช้ FirebaseAuth แทน SimpleAuthService
+import '../models/auth_response.dart'; // ถ้ามีใช้อยู่ที่อื่นได้ ไม่บังคับในหน้านี้
 import '../main.dart';
 
 /// mapping ของ role -> route
@@ -20,13 +23,13 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _form = GlobalKey<FormState>();
-  final _email = TextEditingController();
-  final _pass  = TextEditingController();
+  final _identifier = TextEditingController(); // อีเมลหรือเบอร์
+  final _pass = TextEditingController();
   bool _loading = false;
 
   @override
   void dispose() {
-    _email.dispose();
+    _identifier.dispose();
     _pass.dispose();
     super.dispose();
   }
@@ -50,35 +53,103 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+ 
+  bool _looksLikeEmail(String v) {
+    return RegExp(r'^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$').hasMatch(v.trim());
+  }
+
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     setState(() => _loading = true);
 
-    final auth = FirebaseAuthService();
-    final res = await auth.loginWithEmail(
-      email: _email.text.trim(),
-      password: _pass.text,
-    );
+    final auth = FirebaseAuth.instance;
+    final db = FirebaseFirestore.instance;
+    final id = _identifier.text.trim();
+    final password = _pass.text;
 
-    if (!mounted) return;
-    setState(() => _loading = false);
+    try {
+      if (_looksLikeEmail(id)) {
+        // ====== ล็อกอินด้วยอีเมลปกติ ======
+        await FirebaseAuthService().loginWithEmail(email: id, password: password);
 
-    if (res.success) {
-      final UserResponse user = res.user!;
-      final target = _routeForRole(user.role);
+        return;
+      }
 
+      // ====== ล็อกอินด้วยเบอร์โทร ======
+      final phone = id;
+
+      // หา candidates จาก users และ riders
+      final usersQ = await db
+          .collection('users')
+          .where('phone', isEqualTo: phone)
+          .where('role', isNotEqualTo: 'rider')
+          .limit(1)
+          .get();
+      final ridersQ = await db
+          .collection('riders')
+          .where('phone', isEqualTo: phone)
+          .limit(1)
+          .get();
+
+      final candidates = <_Candidate>[];
+
+      if (usersQ.docs.isNotEmpty) {
+        final m = usersQ.docs.first.data();
+        final email = (m['email'] ?? '').toString().trim();
+        if (email.isNotEmpty) {
+          candidates.add(_Candidate(
+            role: (m['role'] ?? 'user').toString(),
+            email: email,
+          ));
+        }
+      }
+      if (ridersQ.docs.isNotEmpty) {
+        final m = ridersQ.docs.first.data();
+        final email = (m['email'] ?? '').toString().trim();
+        if (email.isNotEmpty) {
+          candidates.add(_Candidate(
+            role: (m['role'] ?? 'rider').toString(),
+            email: email,
+          ));
+        }
+      }
+
+      if (candidates.isEmpty) {
+        throw Exception('ไม่พบบัญชีที่ลงทะเบียนด้วยเบอร์นี้');
+      }
+
+      // ลอง sign-in ทีละ candidate เพื่อเช็คว่ารหัสผ่านถูกกับอีเมลไหนบ้าง
+      final successes = <_Candidate>[];
+      for (final c in candidates) {
+        try {
+          await FirebaseAuthService().loginWithEmail(
+              email: c.email, password: password);
+          successes.add(c);
+        } catch (e) {
+           throw Exception('เบอร์หรือรหัสผ่านไม่ถูกต้อง');
+        }
+      }
+
+      
+
+      if (successes.isEmpty) {
+        throw Exception('เบอร์หรือรหัสผ่านไม่ถูกต้อง');
+      }
+
+     
+
+
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ยินดีต้อนรับ ${user.name.isEmpty ? user.uid : user.name} (${user.role})')),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
-
-      // 🔑 นำทางและล้างสแตกไม่ให้กดย้อนกลับมาที่ login
-      Navigator.of(context).pushNamedAndRemoveUntil(target, (route) => false);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(res.message ?? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง')),
-      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
+
+  
 
   @override
   Widget build(BuildContext context) {
@@ -105,18 +176,19 @@ class _LoginPageState extends State<LoginPage> {
                 key: _form,
                 child: Column(
                   children: [
-                    // Email
+                    // Email หรือ เบอร์โทร
                     TextFormField(
-                      controller: _email,
+                      controller: _identifier,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        hintText: "อีเมล",
-                        prefixIcon: Icon(Icons.email_rounded),
+                        hintText: "อีเมล หรือ เบอร์โทร",
+                        prefixIcon: Icon(Icons.account_circle_rounded),
                       ),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'กรอกอีเมล';
-                        final ok = RegExp(r"^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$").hasMatch(v.trim());
-                        return ok ? null : 'รูปแบบอีเมลไม่ถูกต้อง';
+                        if (v == null || v.trim().isEmpty) {
+                          return 'กรอกอีเมลหรือเบอร์โทร';
+                        }
+                        return null;
                       },
                     ),
                     const SizedBox(height: 12),
@@ -161,10 +233,9 @@ class _LoginPageState extends State<LoginPage> {
                       child: const Text("ยังไม่มีบัญชี? สมัครสมาชิก", style: TextStyle(color: Colors.white)),
                     ),
 
-                    // (ตัวเลือก) ลืมรหัสผ่าน
                     TextButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/forgot_password'); // ถ้ามีหน้า reset
+                        Navigator.pushNamed(context, '/forgot_password');
                       },
                       child: const Text("ลืมรหัสผ่าน?", style: TextStyle(color: Colors.white70)),
                     ),
@@ -177,4 +248,14 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
+}
+
+class _Candidate {
+  final String role;
+  final String email;
+  _Candidate({
+    required this.role,
+    required this.email,
+
+  });
 }

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../main.dart';
 import '../models/auth_request.dart';
 import '../services/firebase_auth_service.dart'; // 👈 ใช้ FirebaseAuth + อัปโหลดใน service
+import 'package:cloud_firestore/cloud_firestore.dart'; // 👈 เพิ่มเพื่อเช็คเบอร์ซ้ำใน Firestore
 
 class RegisterRiderTab extends StatefulWidget {
   const RegisterRiderTab({super.key});
@@ -45,13 +46,45 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
     if (x != null) setState(() => _vehicle = File(x.path));
   }
 
+  /// 🔎 เช็คเบอร์ซ้ำในคอลเล็กชัน riders (และกันชนกับ users ด้วย)
+  Future<bool> _isPhoneDuplicate(String rawPhone) async {
+    // normalize ง่าย ๆ: ตัดช่องว่าง/ขีด/วงเล็บ
+    final phone = rawPhone.replaceAll(RegExp(r'[^\d+]'), '');
+
+    final db = FirebaseFirestore.instance;
+
+    // ซ้ำกับไรเดอร์หรือไม่
+    final riderSnap = await db
+        .collection('riders')
+        .where('phone', isEqualTo: phone)
+        .limit(1)
+        .get();
+    if (riderSnap.docs.isNotEmpty) return true;
+
+
+    return false;
+  }
+
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     setState(() => _loading = true);
 
     try {
+      final normalizedPhone = _phone.text.trim().replaceAll(RegExp(r'[^\d+]'), '');
+
+      // ❗ เช็คเบอร์ซ้ำก่อนสมัคร
+      if (await _isPhoneDuplicate(normalizedPhone)) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('เบอร์นี้ถูกใช้แล้ว (ซ้ำกับไรเดอร์/ผู้ใช้คนอื่น)')),
+        );
+        return;
+      }
+    
+
       final req = RiderSignUpRequest(
-        phone: _phone.text.trim(),
+        phone: normalizedPhone,
         password: _pass.text,
         name: _name.text.trim(),
         vehiclePlate: _plate.text.trim(),
@@ -83,9 +116,8 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
     }
   }
 
@@ -125,14 +157,14 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'กรอกอีเมล';
-                final ok = RegExp(
-                  r"^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$",
-                ).hasMatch(v.trim());
+                final ok =
+                    RegExp(r'^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$').hasMatch(v.trim());
                 return ok ? null : 'รูปแบบอีเมลไม่ถูกต้อง';
               },
             ),
             const SizedBox(height: 10),
 
+            // Phone
             TextFormField(
               controller: _phone,
               keyboardType: TextInputType.phone,
@@ -140,10 +172,19 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
                 hintText: "Phone",
                 prefixIcon: Icon(Icons.phone_rounded),
               ),
-              validator: (v) => v == null || v.isEmpty ? 'กรอกเบอร์โทร' : null,
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'กรอกเบอร์โทร';
+                final p = v.replaceAll(RegExp(r'[^\d+]'), '');
+                // ไทยมัก 9–10 หลัก (หรือเบอร์สากลเริ่ม +)
+                if (!(RegExp(r'^\+?\d{6,12}$').hasMatch(p))) {
+                  return 'กรอกเบอร์ให้ถูกต้อง (6–12 หลัก)';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 10),
 
+            // Password
             TextFormField(
               controller: _pass,
               obscureText: true,
@@ -156,6 +197,7 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
             ),
             const SizedBox(height: 10),
 
+            // Name
             TextFormField(
               controller: _name,
               decoration: const InputDecoration(
@@ -166,6 +208,7 @@ class _RegisterRiderTabState extends State<RegisterRiderTab> {
             ),
             const SizedBox(height: 10),
 
+            // License plate
             TextFormField(
               controller: _plate,
               decoration: const InputDecoration(

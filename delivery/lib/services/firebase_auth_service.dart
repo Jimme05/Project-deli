@@ -53,6 +53,7 @@ class FirebaseAuthService {
 
       final userData = {
         'phone': req.phone.trim(),
+        'email': email.trim(),
         'name': req.name,
         'role': 'user',
         'photoUrl': photoUrl,
@@ -124,6 +125,7 @@ class FirebaseAuthService {
     final riderData = {
       'Rid': uid,
       'Name': req.name,
+      'email': email.trim(),
       'img_profile': profileUrl,
       'img_profile_name': profileName,
       'phone': req.phone.trim(),
@@ -131,6 +133,7 @@ class FirebaseAuthService {
       'Vehicle_img_name': vehicleName,
       'vehicle_plate': req.vehiclePlate,
       'Status-rider': 'idle',
+      'role': 'rider',
       'latitude': null,
       'longitude': null,
       'created_at': FieldValue.serverTimestamp(),

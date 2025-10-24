@@ -9,8 +9,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 
 import '../main.dart';
-import '../models/address.dart';
-import '../models/auth_request.dart';
 
 class RegisterUserTab extends StatefulWidget {
   const RegisterUserTab({super.key});
@@ -52,67 +50,69 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
     if (x != null) setState(() => _img = File(x.path));
   }
 
-  /// ✅ ค้นหาสถานที่ (Search)
+  // 🔎 ค้นหาสถานที่ (Forward Geocoding) — Nominatim
   Future<void> _searchPlace() async {
-    final query = _search.text.trim();
-    if (query.isEmpty) return;
+    final q = _search.text.trim();
+    if (q.isEmpty) return;
 
     final url = Uri.parse(
-      'https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1',
+      'https://nominatim.openstreetmap.org/search'
+      '?q=${Uri.encodeQueryComponent(q)}&format=json&limit=1&addressdetails=1',
     );
 
     try {
       final res = await http.get(
         url,
-        headers: {'User-Agent': 'FlutterMapApp/1.0 (contact@example.com)'},
+        headers: {'User-Agent': 'delivery-app/1.0 (edu-example)'},
       );
 
       if (res.statusCode == 200) {
         final List data = jsonDecode(res.body);
         if (data.isNotEmpty) {
-          final lat = double.parse(data[0]['lat']);
-          final lon = double.parse(data[0]['lon']);
-          final displayName = data[0]['display_name'] as String;
+          final lat = double.tryParse(data[0]['lat']?.toString() ?? '');
+          final lon = double.tryParse(data[0]['lon']?.toString() ?? '');
+          final displayName = data[0]['display_name']?.toString();
 
-          setState(() {
-            _selectedPoint = LatLng(lat, lon);
-            _addressText = displayName;
-          });
-          _mapController.move(_selectedPoint!, 15);
+          if (lat != null && lon != null) {
+            setState(() {
+              _selectedPoint = LatLng(lat, lon);
+              _addressText = displayName ?? 'ไม่พบชื่อสถานที่';
+            });
+            _mapController.move(_selectedPoint!, 15);
+          } else {
+            _toast('ข้อมูลพิกัดไม่ถูกต้องจากผลการค้นหา');
+          }
         } else {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('ไม่พบสถานที่ที่ค้นหา')));
+          _toast('ไม่พบสถานที่ที่ค้นหา');
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ค้นหาล้มเหลว (${res.statusCode})')),
-        );
+        _toast('ค้นหาล้มเหลว (${res.statusCode})');
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาดในการค้นหา: $e')));
+      _toast('เกิดข้อผิดพลาดในการค้นหา: $e');
     }
   }
 
-  /// ✅ Reverse Geocoding - แปลงพิกัดเป็นชื่อสถานที่
+  // 🔁 Reverse Geocoding — แปลงพิกัดเป็นชื่อสถานที่
   Future<void> _getAddressFromLatLng(LatLng point) async {
     final url = Uri.parse(
-      'https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.latitude}&lon=${point.longitude}&zoom=18&addressdetails=1',
+      'https://nominatim.openstreetmap.org/reverse'
+      '?format=json&lat=${point.latitude}&lon=${point.longitude}'
+      '&zoom=18&addressdetails=1',
     );
 
     try {
       final res = await http.get(
         url,
-        headers: {'User-Agent': 'FlutterMapApp/1.0 (contact@example.com)'},
+        headers: {'User-Agent': 'delivery-app/1.0 (edu-example)'},
       );
 
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final displayName = data['display_name'] ?? "ไม่พบชื่อสถานที่";
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final displayName = data['display_name']?.toString();
         setState(() {
-          _addressText = displayName;
+          _addressText = displayName ??
+              'ตำแหน่ง (${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)})';
         });
       } else {
         setState(() {
@@ -128,26 +128,24 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
     }
   }
 
-  /// ✅ ตรวจสอบอีเมล/เบอร์ซ้ำ
+  // ✅ ตรวจสอบอีเมล/เบอร์ซ้ำ
   Future<bool> _isDuplicate(String email, String phone) async {
     final userRef = FirebaseFirestore.instance.collection('users');
-    final checkEmail = await userRef
-        .where('email', isEqualTo: email)
-        .limit(1)
-        .get();
-    final checkPhone = await userRef
+    final checkEmail =
+        await userRef.where('email', isEqualTo: email).limit(1).get();
+    final checkPhone =
+        await userRef
+        
         .where('phone', isEqualTo: phone)
-        .limit(1)
-        .get();
+        .where('role',isNotEqualTo: 'rider')
+        .limit(1).get();
     return checkEmail.docs.isNotEmpty || checkPhone.docs.isNotEmpty;
   }
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     if (_selectedPoint == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณาปักหมุดที่อยู่ก่อนสมัคร')),
-      );
+      _toast('กรุณาปักหมุดที่อยู่ก่อนสมัคร');
       return;
     }
 
@@ -161,50 +159,64 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
 
       if (await _isDuplicate(email, phone)) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('อีเมลหรือเบอร์นี้ถูกใช้แล้ว')),
-        );
+        _toast('อีเมลหรือเบอร์นี้ถูกใช้แล้ว');
         return;
       }
 
-      // ✅ สมัครผู้ใช้ใหม่กับ FirebaseAuth
+      // 🧾 สมัครผู้ใช้งาน
       final credential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: pass);
       final user = credential.user;
       if (user == null) throw Exception('สร้างผู้ใช้ไม่สำเร็จ');
 
-      // ✅ บันทึกข้อมูลใน Firestore
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      final lat = _selectedPoint!.latitude;
+      final lng = _selectedPoint!.longitude;
+      final text = _addressText ?? 'ไม่ทราบที่อยู่';
+
+      final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+
+      // 1) เก็บใน users/{uid} (มีฟิลด์ address แบบย่อย)
+      await userDoc.set({
         'uid': user.uid,
         'email': email,
         'phone': phone,
         'name': name,
-        'role': 'user', // 👈 สำคัญ! ให้เป็น user ไม่ใช่ rider
+        'role': 'user',
         'address': {
+          // เก็บแบบตัวเล็กไว้ด้วย
           'label': 'บ้าน',
-          'addressText': _addressText ?? 'ไม่ทราบที่อยู่',
-          'latitude': _selectedPoint!.latitude,
-          'longitude': _selectedPoint!.longitude,
+          'addressText': text,
+          'latitude': lat,
+          'longitude': lng,
         },
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // 2) สร้าง subcollection users/{uid}/addresses/default
+      //    ใช้โครงเดียวกับส่วนอื่นของแอป (คีย์ตัวใหญ่ + isDefault)
+      await userDoc.collection('addresses').doc('default').set({
+        'label': 'บ้าน',
+        'addressText': text,
+        'Latitude': lat,   // 👈 ตัวใหญ่
+        'Longitude': lng,  // 👈 ตัวใหญ่
+        'isDefault': true,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       setState(() => _loading = false);
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('✅ สมัคร User สำเร็จ')));
-
-      // ✅ หลังสมัครเสร็จ กลับหน้า Login หรือ User Home
-      Navigator.pushReplacementNamed(context, '/login');
+      _toast('✅ สมัคร User สำเร็จ');
+      Navigator.pop(context, '/login');
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+      _toast('เกิดข้อผิดพลาด: $e');
     }
+  }
+
+  void _toast(String m) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
   @override
@@ -222,11 +234,8 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
                 backgroundColor: Colors.white,
                 backgroundImage: _img != null ? FileImage(_img!) : null,
                 child: _img == null
-                    ? const Icon(
-                        Icons.camera_alt_rounded,
-                        color: Colors.black45,
-                        size: 30,
-                      )
+                    ? const Icon(Icons.camera_alt_rounded,
+                        color: Colors.black45, size: 30)
                     : null,
               ),
             ),
@@ -241,9 +250,8 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'กรอกอีเมล';
-                final ok = RegExp(
-                  r"^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$",
-                ).hasMatch(v.trim());
+                final ok =
+                    RegExp(r"^[\w\.\-]+@[\w\-]+\.[\w\.\-]+$").hasMatch(v.trim());
                 return ok ? null : 'รูปแบบอีเมลไม่ถูกต้อง';
               },
             ),
@@ -278,8 +286,7 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
                 hintText: "Name",
                 prefixIcon: Icon(Icons.person_rounded),
               ),
-              validator: (v) =>
-                  v == null || v.isEmpty ? 'กรอกชื่อผู้ใช้' : null,
+              validator: (v) => v == null || v.isEmpty ? 'กรอกชื่อผู้ใช้' : null,
             ),
             const SizedBox(height: 20),
 
@@ -335,8 +342,8 @@ class _RegisterUserTabState extends State<RegisterUserTab> {
                 children: [
                   TileLayer(
                     urlTemplate:
-                        'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-                    subdomains: const ['a', 'b', 'c'],
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.example.delivery',
                   ),
                   if (_selectedPoint != null)
                     MarkerLayer(

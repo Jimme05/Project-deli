@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // 👈 เพิ่ม
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 
 class OrderDetailPage extends StatelessWidget {
   const OrderDetailPage({super.key});
@@ -23,7 +22,7 @@ class OrderDetailPage extends StatelessWidget {
         elevation: 2,
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: orderRef.snapshots(), // ✅ realtime listener
+        stream: orderRef.snapshots(),
         builder: (context, snap) {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -34,177 +33,100 @@ class OrderDetailPage extends StatelessWidget {
 
           final m = snap.data!.data()!;
           final status = _asStatusInt(m['Status_order']);
-          final riderId =
-              (m['assignedRiderId'] ?? m['assignedRiderID'] ?? m['rid'])
-                  ?.toString();
 
           final pickup = m['pickup_address'] as Map<String, dynamic>?;
           final delivery = m['delivery_address'] as Map<String, dynamic>?;
-          final pickupLatLng = _toLatLng(pickup);
-          final deliveryLatLng = _toLatLng(delivery);
 
-          // ✅ ดึงรูปภาพทั้งหมดตามสถานะเรียงจาก 1 → 4
+          // รวมรูปทุกสถานะ
           final imageList = _allImages(m);
 
-          final header = _OrderHeader(
-            name: (m['Name'] ?? '-').toString(),
-            phone: (m['receiver_phone'] ?? '-').toString(),
-            status: status,
-            pickupText: pickup?['addressText'] ?? '-',
-            deliveryText: delivery?['addressText'] ?? '-',
-            createdAt: m['created_at'],
-            images: imageList, // ✅ ส่งรูปทั้งหมด
-          );
+          // ใครกำลังดูอยู่?
+          final currentUid = FirebaseAuth.instance.currentUser?.uid;
+          final uidSender = (m['Uid_sender'] ?? m['senderUid'])?.toString();
+          final uidReceiver = (m['Uid_receiver'] ?? m['receiverUid'])?.toString();
 
-          final hasLiveRider =
-              riderId != null && riderId.isNotEmpty && status < 4;
+          final isViewerReceiver = currentUid != null && currentUid == uidReceiver;
+          final isViewerSender  = currentUid != null && currentUid == uidSender;
 
-          if (hasLiveRider) {
-            final riderRef = FirebaseFirestore.instance
-                .collection('riders')
-                .doc(riderId);
+          // เตรียม label + ข้อมูลคนอีกฝั่ง
+          final counterpartLabel = isViewerReceiver ? 'ผู้ส่ง' : 'ผู้รับ';
 
-            return Column(
-              children: [
-                Expanded(child: header),
-                Container(
-                  height: 360,
-                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child:
-                        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                          stream: riderRef.snapshots(),
-                          builder: (context, rSnap) {
-                            LatLng? riderLatLng;
-                            if (rSnap.hasData && rSnap.data!.exists) {
-                              final r = rSnap.data!.data()!;
-                              final lat = (r['latitude'] as num?)?.toDouble();
-                              final lng = (r['longitude'] as num?)?.toDouble();
-                              if (lat != null && lng != null) {
-                                riderLatLng = LatLng(lat, lng);
-                              }
-                            }
-
-                            final center =
-                                riderLatLng ??
-                                deliveryLatLng ??
-                                pickupLatLng ??
-                                const LatLng(13.7563, 100.5018);
-
-                            final markers = <Marker>[
-                              if (pickupLatLng != null)
-                                _marker(pickupLatLng, Colors.orange, 'รับ'),
-                              if (deliveryLatLng != null)
-                                _marker(
-                                  deliveryLatLng,
-                                  Colors.redAccent,
-                                  'ส่ง',
-                                ),
-                              if (riderLatLng != null)
-                                _marker(
-                                  riderLatLng,
-                                  Colors.blueAccent,
-                                  'ไรเดอร์',
-                                ),
-                            ];
-
-                            return _LiveMap(center: center, markers: markers);
-                          },
-                        ),
-                  ),
-                ),
-              ],
+          // ถ้าคนดูเป็น "ผู้ส่ง" → ใช้ข้อมูลผู้รับจากออเดอร์โดยตรง
+          if (isViewerSender || !isViewerReceiver) {
+            final header = _OrderHeader(
+              personLabel: counterpartLabel,            // ผู้รับ
+              name: (m['Name'] ?? '-').toString(),
+              phone: (m['receiver_phone'] ?? '-').toString(),
+              status: status,
+              pickupText: pickup?['addressText'] ?? '-',
+              deliveryText: delivery?['addressText'] ?? '-',
+              createdAt: m['created_at'],
+              images: imageList,
             );
+            return header;
           }
 
-          return header;
+          // ถ้าคนดูเป็น "ผู้รับ" → ต้องดึงข้อมูลผู้ส่งจาก users/{Uid_sender}
+          if (uidSender == null || uidSender.isEmpty) {
+            // ไม่มี uid ผู้ส่งในเอกสาร ก็ fallback เป็นเดิม
+            final header = _OrderHeader(
+              personLabel: counterpartLabel,
+              name: (m['sender_name'] ?? '-').toString(),
+              phone: (m['sender_phone'] ?? '-').toString(),
+              status: status,
+              pickupText: pickup?['addressText'] ?? '-',
+              deliveryText: delivery?['addressText'] ?? '-',
+              createdAt: m['created_at'],
+              images: imageList,
+            );
+            return header;
+          }
+
+          return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            future: FirebaseFirestore.instance.collection('users').doc(uidSender).get(),
+            builder: (context, uSnap) {
+              String senderName = (m['sender_name'] ?? '').toString();
+              String senderPhone = (m['sender_phone'] ?? '').toString();
+
+              if (uSnap.hasData && uSnap.data!.exists) {
+                final u = uSnap.data!.data()!;
+                if (senderName.isEmpty) {
+                  senderName = (u['name'] ?? '').toString();
+                }
+                if (senderPhone.isEmpty) {
+                  senderPhone = (u['phone'] ?? '').toString();
+                }
+              }
+
+              return _OrderHeader(
+                personLabel: counterpartLabel,      // ผู้ส่ง
+                name: senderName.isEmpty ? '-' : senderName,
+                phone: senderPhone.isEmpty ? '-' : senderPhone,
+                status: status,
+                pickupText: pickup?['addressText'] ?? '-',
+                deliveryText: delivery?['addressText'] ?? '-',
+                createdAt: m['created_at'],
+                images: imageList,
+              );
+            },
+          );
         },
       ),
     );
   }
 
-  static LatLng? _toLatLng(Map<String, dynamic>? m) {
-    if (m == null) return null;
-    final lat = (m['Latitude'] as num?)?.toDouble();
-    final lng = (m['Longitude'] as num?)?.toDouble();
-    if (lat == null || lng == null) return null;
-    return LatLng(lat, lng);
-  }
-
-  /// ✅ รวมรูปทุกสถานะไว้ในลิสต์ (เรียงจากสถานะ 1 → 4)
+  /// รวมรูปทุกสถานะ 1→4
   static List<Map<String, dynamic>> _allImages(Map<String, dynamic> m) {
     final list = <Map<String, dynamic>>[];
-
     void addImg(String? url, int s) {
-      if (url != null && url.isNotEmpty) {
-        list.add({'url': url, 'status': s});
-      }
+      if (url != null && url.isNotEmpty) list.add({'url': url, 'status': s});
     }
-
     addImg(m['img_status_1'], 1);
     addImg(m['img_status_2'], 2);
     addImg(m['img_status_3'], 3);
     addImg(m['img_status_4'], 4);
-
     return list;
   }
-
-  static Marker _marker(LatLng p, Color c, String label) => Marker(
-    point: p,
-    width: 60,
-    height: 72,
-    alignment: Alignment.topCenter,
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: c.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(color: c.withValues(alpha: 0.35), blurRadius: 6),
-            ],
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 4,
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(6),
-          child: Icon(Icons.location_pin, color: c, size: 22),
-        ),
-      ],
-    ),
-  );
 
   static int _asStatusInt(dynamic v) {
     if (v is int) return v;
@@ -213,103 +135,10 @@ class OrderDetailPage extends StatelessWidget {
   }
 }
 
-// 🗺️ แผนที่แสดงตำแหน่ง
-class _LiveMap extends StatefulWidget {
-  final LatLng center;
-  final List<Marker> markers;
-  const _LiveMap({required this.center, required this.markers});
+// ---------------- Header ----------------
 
-  @override
-  State<_LiveMap> createState() => _LiveMapState();
-}
-
-class _LiveMapState extends State<_LiveMap> {
-  final _controller = MapController();
-  double _zoom = 14;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        FlutterMap(
-          mapController: _controller,
-          options: MapOptions(
-            initialCenter: widget.center,
-            initialZoom: _zoom,
-            minZoom: 3,
-            maxZoom: 18,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate:
-                  'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-              subdomains: const ['a', 'b', 'c'],
-              userAgentPackageName: 'com.example.app',
-            ),
-            MarkerLayer(markers: widget.markers),
-          ],
-        ),
-        Positioned(
-          right: 10,
-          top: 10,
-          child: Column(
-            children: [
-              _mapFab(
-                icon: Icons.my_location,
-                tooltip: 'ไปตำแหน่ง',
-                onTap: () => _controller.move(widget.center, _zoom),
-              ),
-              const SizedBox(height: 8),
-              _mapFab(
-                icon: Icons.add,
-                tooltip: 'ซูมเข้า',
-                onTap: () {
-                  _zoom = (_zoom + 1).clamp(3, 18);
-                  _controller.move(_controller.camera.center, _zoom);
-                },
-              ),
-              const SizedBox(height: 8),
-              _mapFab(
-                icon: Icons.remove,
-                tooltip: 'ซูมออก',
-                onTap: () {
-                  _zoom = (_zoom - 1).clamp(3, 18);
-                  _controller.move(_controller.camera.center, _zoom);
-                },
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _mapFab({
-    required IconData icon,
-    required VoidCallback onTap,
-    String? tooltip,
-  }) {
-    return Material(
-      color: Colors.black87.withOpacity(0.6),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Tooltip(
-          message: tooltip ?? '',
-          child: SizedBox(
-            width: 40,
-            height: 40,
-            child: Icon(icon, color: Colors.white, size: 20),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// 🧾 Header (ข้อมูลออเดอร์)
 class _OrderHeader extends StatelessWidget {
+  final String personLabel; // <- 'ผู้ส่ง' หรือ 'ผู้รับ' ตามผู้ที่เข้าดู
   final String name;
   final String phone;
   final int status;
@@ -319,6 +148,7 @@ class _OrderHeader extends StatelessWidget {
   final List<Map<String, dynamic>> images;
 
   const _OrderHeader({
+    required this.personLabel,
     required this.name,
     required this.phone,
     required this.status,
@@ -365,7 +195,7 @@ class _OrderHeader extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    name,
+                    'รายละเอียดออเดอร์',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -376,14 +206,16 @@ class _OrderHeader extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            _kv('เบอร์ผู้รับ', phone),
+
+            // แสดงข้อมูลของ "อีกฝั่ง" ตามบทบาทผู้ที่เข้าดู
+            _kv('ชื่อ$personLabel', name),
+            _kv('เบอร์$personLabel', phone),
+
             _kv('สถานะ', _statusText(status)),
             _kv('วันที่สร้าง', _dateStr(createdAt)),
             const Divider(height: 24, thickness: 1.1),
-            const Text(
-              "📍 เส้นทางการจัดส่ง",
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
+
+            const Text("📍 เส้นทางการจัดส่ง", style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             _locationCard(
               Icons.store_mall_directory_rounded,
@@ -401,13 +233,9 @@ class _OrderHeader extends StatelessWidget {
 
             if (images.isNotEmpty) ...[
               const SizedBox(height: 20),
-              const Text(
-                "📷 ภาพสินค้าขณะจัดส่ง (อัปเดตเรียลไทม์)",
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
+              const Text("📷 ภาพสินค้าขณะจัดส่ง (อัปเดตเรียลไทม์)",
+                  style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
-
-              // ✅ แสดงรูปทั้งหมดตามลำดับสถานะ
               Column(
                 children: images.map((img) {
                   final s = img['status'] as int;
@@ -416,13 +244,11 @@ class _OrderHeader extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '• ${_statusText(s)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: _statusColor(s),
-                          ),
-                        ),
+                        Text('• ${_statusText(s)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: _statusColor(s),
+                            )),
                         const SizedBox(height: 6),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
@@ -501,23 +327,23 @@ class _OrderHeader extends StatelessWidget {
   }
 
   static Widget _kv(String k, String v) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: RichText(
-      text: TextSpan(
-        text: '$k: ',
-        style: const TextStyle(
-          color: Colors.black87,
-          fontWeight: FontWeight.w600,
-        ),
-        children: [
-          TextSpan(
-            text: v,
-            style: const TextStyle(fontWeight: FontWeight.w400),
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: RichText(
+          text: TextSpan(
+            text: '$k: ',
+            style: const TextStyle(
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+            ),
+            children: [
+              TextSpan(
+                text: v,
+                style: const TextStyle(fontWeight: FontWeight.w400),
+              ),
+            ],
           ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 
   static String _statusText(int s) {
     switch (s) {
