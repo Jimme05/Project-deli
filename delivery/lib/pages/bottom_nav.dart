@@ -41,6 +41,7 @@ class BottomNav extends StatelessWidget {
           icon: Icon(Icons.person_outline_rounded, size: 28),
           label: 'Profile',
         ),
+        
       ],
       type: BottomNavigationBarType.fixed,
       elevation: 0,

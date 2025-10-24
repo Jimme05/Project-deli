@@ -115,7 +115,10 @@ class _DeliveryPageState extends State<DeliveryPage> {
                       ),
                     ),
                   ),
-                  IconButton(
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedStatus = 1),
+                      child: IconButton(
                     icon: const Icon(Icons.map_rounded),
                     tooltip: 'ดูแมพรวมทุกออเดอร์',
                     onPressed: () {
@@ -127,6 +130,9 @@ class _DeliveryPageState extends State<DeliveryPage> {
                       );
                     },
                   ),
+                    ),
+                  ),
+                  
                 ],
               ),
             ),

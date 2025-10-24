@@ -54,14 +54,7 @@ class _UserAllOrdersMapPageState extends State<UserAllOrdersMapPage> {
               ? 'แมพรวมออเดอร์ (ฉันได้รับ)'
               : 'แมพรวมออเดอร์ (ฉันส่ง)',
         ),
-        actions: [
-          IconButton(
-            tooltip: 'สลับโหมด ฉันส่ง/ฉันได้รับ',
-            icon: const Icon(Icons.swap_horiz_rounded),
-            onPressed: () => setState(
-                () => _mode = _mode == 'receiver' ? 'sender' : 'receiver'),
-          ),
-        ],
+        
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: ordersQ,
