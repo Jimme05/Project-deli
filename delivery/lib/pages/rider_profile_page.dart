@@ -47,11 +47,12 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
     }
-    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
+    if (p == LocationPermission.denied ||
+        p == LocationPermission.deniedForever) {
       if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ไม่ได้รับสิทธิ์ตำแหน่ง')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ไม่ได้รับสิทธิ์ตำแหน่ง')));
       return false;
     }
     return true;
@@ -84,10 +85,13 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
       perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่ได้รับสิทธิ์ตำแหน่ง: ไม่สามารถแชร์พิกัดได้')),
+          const SnackBar(
+            content: Text('ไม่ได้รับสิทธิ์ตำแหน่ง: ไม่สามารถแชร์พิกัดได้'),
+          ),
         );
         return;
       }
@@ -102,20 +106,21 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
       return;
     }
 
-    _posSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.best,
-        distanceFilter: 5,
-      ),
-    ).listen((pos) async {
-      await _db.collection('riders').doc(uid).set({
-        'latitude': pos.latitude,
-        'longitude': pos.longitude,
-        'last_update': FieldValue.serverTimestamp(),
-        'current_order_id': orderId,
-        'Status-rider': 'busy',
-      }, SetOptions(merge: true));
-    });
+    _posSub =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 5,
+          ),
+        ).listen((pos) async {
+          await _db.collection('riders').doc(uid).set({
+            'latitude': pos.latitude,
+            'longitude': pos.longitude,
+            'last_update': FieldValue.serverTimestamp(),
+            'current_order_id': orderId,
+            'Status-rider': 'busy',
+          }, SetOptions(merge: true));
+        });
   }
 
   Future<void> _stopLocationStream() async {
@@ -140,7 +145,9 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('คุณมีงานค้างอยู่ กรุณาส่งงานเดิมให้เสร็จก่อนรับงานใหม่'),
+            content: Text(
+              'คุณมีงานค้างอยู่ กรุณาส่งงานเดิมให้เสร็จก่อนรับงานใหม่',
+            ),
           ),
         );
         return;
@@ -162,12 +169,15 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ รับออเดอร์สำเร็จ และเริ่มแชร์พิกัดเรียลไทม์')),
+        const SnackBar(
+          content: Text('✅ รับออเดอร์สำเร็จ และเริ่มแชร์พิกัดเรียลไทม์'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('❌ รับออเดอร์ไม่สำเร็จ: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ รับออเดอร์ไม่สำเร็จ: $e')));
     } finally {
       if (mounted) setState(() => _startingShare = false);
     }
@@ -180,7 +190,7 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
       return const Scaffold(body: Center(child: Text('กรุณาเข้าสู่ระบบก่อน')));
     }
 
-    final riderProfileFuture = _db.collection('users').doc(uid).get();
+    final riderProfileFuture = _db.collection('riders').doc(uid).get();
     final waitingOrdersStream = _db
         .collection('orders')
         .where('Status_order', isEqualTo: 1)
@@ -205,11 +215,15 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: _db.collection('riders').doc(uid).snapshots(),
             builder: (context, snap) {
-              final status = (snap.data?.data()?['Status-rider'] ?? 'idle').toString();
+              final status = (snap.data?.data()?['Status-rider'] ?? 'idle')
+                  .toString();
               final busy = status != 'idle';
               return Container(
                 margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: busy ? Colors.orange.shade100 : Colors.green.shade100,
                   borderRadius: BorderRadius.circular(20),
@@ -217,7 +231,9 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
                 child: Text(
                   busy ? 'สถานะ: ไม่ว่าง' : 'สถานะ: ว่าง',
                   style: TextStyle(
-                    color: busy ? Colors.orange.shade800 : Colors.green.shade800,
+                    color: busy
+                        ? Colors.orange.shade800
+                        : Colors.green.shade800,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -262,11 +278,12 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
             final riderData = riderSnap.data?.data() ?? {};
             final name = (riderData['name'] ?? 'ชื่อไรเดอร์').toString();
             final phone = (riderData['phone'] ?? 'ไม่ระบุเบอร์').toString();
-            final license =
-                (riderData['license'] ?? riderData['vehiclePlate'] ?? 'ไม่ระบุทะเบียน').toString();
-            final photoUrl = (riderData['photoUrl'] ??
-                    'https://cdn-icons-png.flaticon.com/512/147/147142.png')
+            final license = (riderData['vehicle_plate'] ?? 'ไม่ระบุทะเบียน')
                 .toString();
+            final photoUrl =
+                (riderData['photoUrl'] ??
+                        'https://cdn-icons-png.flaticon.com/512/147/147142.png')
+                    .toString();
 
             return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: waitingOrdersStream,
@@ -341,16 +358,22 @@ class _RiderProfilePageState extends State<RiderProfilePage> {
                       const Center(
                         child: Padding(
                           padding: EdgeInsets.only(top: 20),
-                          child: Text('ยังไม่มีออเดอร์รอรับในตอนนี้',
-                              style: TextStyle(color: Colors.black54)),
+                          child: Text(
+                            'ยังไม่มีออเดอร์รอรับในตอนนี้',
+                            style: TextStyle(color: Colors.black54),
+                          ),
                         ),
                       )
                     else
-                      ...allOrders.map((doc) => _OrderCard(
-                            orderDoc: doc,
-                            onAccept: _startingShare ? null : () => _acceptOrder(doc.id),
-                            accepting: _startingShare,
-                          )),
+                      ...allOrders.map(
+                        (doc) => _OrderCard(
+                          orderDoc: doc,
+                          onAccept: _startingShare
+                              ? null
+                              : () => _acceptOrder(doc.id),
+                          accepting: _startingShare,
+                        ),
+                      ),
                   ],
                 );
               },
@@ -396,21 +419,35 @@ class _OrderCard extends StatelessWidget {
     return FutureBuilder<List<Map<String, dynamic>?>>(
       future: Future.wait([
         senderUid.isNotEmpty
-            ? FirebaseFirestore.instance.collection('users').doc(senderUid).get().then((d) => d.data())
+            ? FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(senderUid)
+                  .get()
+                  .then((d) => d.data())
             : Future.value(null),
         receiverUid.isNotEmpty
-            ? FirebaseFirestore.instance.collection('users').doc(receiverUid).get().then((d) => d.data())
+            ? FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(receiverUid)
+                  .get()
+                  .then((d) => d.data())
             : Future.value(null),
       ]),
       builder: (context, snap) {
-        final senderData = (snap.data != null && snap.data!.isNotEmpty) ? snap.data![0] : null;
-        final receiverData = (snap.data != null && snap.data!.length > 1) ? snap.data![1] : null;
+        final senderData = (snap.data != null && snap.data!.isNotEmpty)
+            ? snap.data![0]
+            : null;
+        final receiverData = (snap.data != null && snap.data!.length > 1)
+            ? snap.data![1]
+            : null;
 
         final senderName = (senderData?['name'] ?? '-').toString();
         final senderPhone = (senderData?['phone'] ?? '-').toString();
 
-        final receiverName = (receiverData?['name'] ?? orderReceiverName).toString();
-        final receiverPhone = (receiverData?['phone'] ?? orderReceiverPhone).toString();
+        final receiverName = (receiverData?['name'] ?? orderReceiverName)
+            .toString();
+        final receiverPhone = (receiverData?['phone'] ?? orderReceiverPhone)
+            .toString();
 
         return Container(
           margin: const EdgeInsets.only(bottom: 14),
@@ -429,17 +466,29 @@ class _OrderCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("📦 Order ID: $oid",
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              Text(
+                "📦 Order ID: $oid",
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
               const SizedBox(height: 6),
 
-              Text("ผู้ส่ง: $senderName  (${senderPhone == '-' ? '' : senderPhone})"),
-              Text("ผู้รับ: $receiverName  (${receiverPhone == '-' ? '' : receiverPhone})"),
+              Text(
+                "ผู้ส่ง: $senderName  (${senderPhone == '-' ? '' : senderPhone})",
+              ),
+              Text(
+                "ผู้รับ: $receiverName  (${receiverPhone == '-' ? '' : receiverPhone})",
+              ),
               Text("วันที่สร้าง: $created"),
               const SizedBox(height: 8),
 
               // ที่อยู่แบบละเอียด (การ์ดเล็ก ๆ สองใบ)
-              const Text("📍 เส้นทางจัดส่ง", style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text(
+                "📍 เส้นทางจัดส่ง",
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 6),
               _addrCard(
                 icon: Icons.store_mall_directory_rounded,
@@ -480,7 +529,10 @@ class _OrderCard extends StatelessWidget {
                             color: Colors.white,
                           ),
                         )
-                      : const Text("รับออเดอร์นี้", style: TextStyle(fontSize: 15)),
+                      : const Text(
+                          "รับออเดอร์นี้",
+                          style: TextStyle(fontSize: 15),
+                        ),
                 ),
               ),
             ],
@@ -509,7 +561,11 @@ class _OrderCard extends StatelessWidget {
           Expanded(
             child: Text(
               '$title\n$text',
-              style: const TextStyle(fontSize: 13.5, height: 1.35, color: Colors.black87),
+              style: const TextStyle(
+                fontSize: 13.5,
+                height: 1.35,
+                color: Colors.black87,
+              ),
             ),
           ),
         ],
@@ -518,12 +574,10 @@ class _OrderCard extends StatelessWidget {
   }
 
   static String _addressTextOrCoord(Map<String, dynamic> m) {
-    final txt = (m['addressText'] ??
-            m['AddressText'] ??
-            m['address_text'] ??
-            '')
-        .toString()
-        .trim();
+    final txt =
+        (m['addressText'] ?? m['AddressText'] ?? m['address_text'] ?? '')
+            .toString()
+            .trim();
     if (txt.isNotEmpty) return txt;
 
     final lat = (m['Latitude'] ?? m['latitude']) as num?;
@@ -548,10 +602,7 @@ class _OrderMiniMap extends StatelessWidget {
   final Map<String, dynamic> pickup;
   final Map<String, dynamic> delivery;
 
-  const _OrderMiniMap({
-    required this.pickup,
-    required this.delivery,
-  });
+  const _OrderMiniMap({required this.pickup, required this.delivery});
 
   LatLng? _toLatLng(Map<String, dynamic> m) {
     final lat = (m['Latitude'] ?? m['latitude']) as num?;
@@ -634,7 +685,7 @@ class _OrderMiniMap extends StatelessWidget {
           BoxShadow(
             color: Colors.black.withAlpha((0.18 * 255).round()),
             blurRadius: 8,
-          )
+          ),
         ],
       ),
       child: Icon(icon, color: color, size: 28),
